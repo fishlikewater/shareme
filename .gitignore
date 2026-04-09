@@ -1,0 +1,14 @@
+.idea/
+.worktrees/
+.serena/
+.superpowers/
+.cache/
+backend/message-share-agent.exe
+backend/message-share-agent
+frontend/node_modules/
+frontend/dist/
+node_modules/
+*.db
+*.db-shm
+*.db-wal
+coverage/

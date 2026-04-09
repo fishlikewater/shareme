@@ -4,14 +4,24 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/hex"
 	"encoding/pem"
+	"os"
+	"path/filepath"
 	"time"
 
 	"message-share/backend/internal/domain"
 )
 
-func EnsureLocalDevice(_ string, name string) (domain.LocalDevice, error) {
+func EnsureLocalDevice(identityFilePath string, name string) (domain.LocalDevice, error) {
+	if existing, err := readLocalDevice(identityFilePath); err == nil {
+		if existing.DeviceName == "" {
+			existing.DeviceName = name
+		}
+		return existing, nil
+	}
+
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return domain.LocalDevice{}, err
@@ -27,13 +37,19 @@ func EnsureLocalDevice(_ string, name string) (domain.LocalDevice, error) {
 		return domain.LocalDevice{}, err
 	}
 
-	return domain.LocalDevice{
+	device := domain.LocalDevice{
 		DeviceID:      randomDeviceID(),
 		DeviceName:    name,
 		PublicKeyPEM:  string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicKeyDER})),
 		PrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyDER})),
 		CreatedAt:     time.Now().UTC(),
-	}, nil
+	}
+
+	if err := persistLocalDevice(identityFilePath, device); err != nil {
+		return domain.LocalDevice{}, err
+	}
+
+	return device, nil
 }
 
 func randomDeviceID() string {
@@ -43,4 +59,31 @@ func randomDeviceID() string {
 	}
 
 	return hex.EncodeToString(bytes)
+}
+
+func readLocalDevice(identityFilePath string) (domain.LocalDevice, error) {
+	content, err := os.ReadFile(identityFilePath)
+	if err != nil {
+		return domain.LocalDevice{}, err
+	}
+
+	var device domain.LocalDevice
+	if err := json.Unmarshal(content, &device); err != nil {
+		return domain.LocalDevice{}, err
+	}
+
+	return device, nil
+}
+
+func persistLocalDevice(identityFilePath string, device domain.LocalDevice) error {
+	if err := os.MkdirAll(filepath.Dir(identityFilePath), 0o755); err != nil {
+		return err
+	}
+
+	content, err := json.MarshalIndent(device, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(identityFilePath, content, 0o600)
 }

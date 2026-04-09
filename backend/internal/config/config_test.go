@@ -13,4 +13,10 @@ func TestDefaultConfigUsesLocalhostAndFixedPorts(t *testing.T) {
 	if cfg.DiscoveryUDPPort != 19091 {
 		t.Fatalf("expected discovery port 19091, got %d", cfg.DiscoveryUDPPort)
 	}
+	if cfg.DeviceName == "" {
+		t.Fatal("expected default device name")
+	}
+	if cfg.IdentityFilePath == "" {
+		t.Fatal("expected identity file path")
+	}
 }

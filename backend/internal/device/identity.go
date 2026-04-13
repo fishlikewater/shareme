@@ -4,8 +4,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -16,8 +16,11 @@ import (
 
 func EnsureLocalDevice(identityFilePath string, name string) (domain.LocalDevice, error) {
 	if existing, err := readLocalDevice(identityFilePath); err == nil {
-		if existing.DeviceName == "" {
+		if existing.DeviceName == "" && name != "" {
 			existing.DeviceName = name
+			if err := persistLocalDevice(identityFilePath, existing); err != nil {
+				return domain.LocalDevice{}, err
+			}
 		}
 		return existing, nil
 	}

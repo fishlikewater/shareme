@@ -28,6 +28,7 @@ type Conversation struct {
 type Message struct {
 	MessageID      string
 	ConversationID string
+	Direction      string
 	Kind           string
 	Body           string
 	Status         string

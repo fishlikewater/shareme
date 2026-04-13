@@ -7,6 +7,9 @@ backend/message-share-agent.exe
 backend/message-share-agent
 frontend/node_modules/
 frontend/dist/
+backend/internal/webui/dist/*
+!backend/internal/webui/dist/.keep
+frontend/tsconfig.tsbuildinfo
 node_modules/
 *.db
 *.db-shm

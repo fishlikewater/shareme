@@ -1,3 +1,4 @@
+/*
 export default function App() {
   return (
     <main>
@@ -6,3 +7,6 @@ export default function App() {
     </main>
   );
 }
+*/
+
+export { default } from "./AppShell";

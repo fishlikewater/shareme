@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
+import { FileMessageCard } from "./FileMessageCard";
 import type { ConversationMessage, PeerSummary } from "../lib/types";
 
 type ChatPaneProps = {
@@ -56,17 +57,19 @@ export function ChatPane({
     <section className="ms-panel ms-chat-panel">
       <div className="ms-chat-header">
         <div>
-          <span className="ms-eyebrow">传输工作区</span>
-          <h2 className="ms-chat-title">{peer ? `与 ${peer.deviceName} 的对话` : "请选择一台设备"}</h2>
+          <span className="ms-eyebrow">沟通中心</span>
+          <h2 className="ms-chat-title">
+            {peer ? `连接 ${peer.deviceName}` : "请选择一个可信设备开始交流"}
+          </h2>
           <p className="ms-chat-copy">{resolveChatCopy(peer)}</p>
         </div>
         {peer ? (
           <div className="ms-badge-row">
             <span className={`ms-badge ${peer.trusted ? "ms-badge--ok" : "ms-badge--warn"}`}>
-              {peer.trusted ? "已配对" : "待配对"}
+              {peer.trusted ? "已信任" : "未信任"}
             </span>
             <span className={`ms-badge ${peer.reachable ? "ms-badge--neutral" : "ms-badge--ghost"}`}>
-              {peer.reachable ? "可直连" : "当前不可达"}
+              {peer.reachable ? "可连接" : "连接受限"}
             </span>
           </div>
         ) : null}
@@ -75,74 +78,81 @@ export function ChatPane({
       {!peer ? (
         <section className="ms-workspace-empty">
           <div className="ms-workspace-empty__hero">
-            <span className="ms-chip ms-chip--soft">首次进入</span>
-            <strong>设备出现后，点一下设备卡片，就能开始发送。</strong>
-            <p>不需要账号。只要在同一局域网里，首次配对一次，后续就能反复直传文字和文件。</p>
+            <span className="ms-chip ms-chip--soft">等待设备</span>
+            <strong>需要一个伙伴来开启共享旅程</strong>
+            <p>在左侧列表中选择设备，完成验证后即可互传文本和文件。</p>
           </div>
-
-          <div className="ms-workspace-steps" aria-label="开始使用步骤">
+          <div className="ms-workspace-steps" aria-label="快速引导">
             <div className="ms-workspace-step">
               <span className="ms-workspace-step__index">1</span>
               <div>
-                <strong>等待发现设备</strong>
-                <p>设备列表会自动列出同网段内在线设备。</p>
+                <strong>选择设备</strong>
+                <p>点击目标设备卡片，查看详情并发起连接。</p>
               </div>
             </div>
             <div className="ms-workspace-step">
               <span className="ms-workspace-step__index">2</span>
               <div>
-                <strong>首次建立信任</strong>
-                <p>看到短码后，两端确认一致即可完成配对。</p>
+                <strong>确认配对</strong>
+                <p>输入配对码或接受邀请，完成设备信任流程。</p>
               </div>
             </div>
             <div className="ms-workspace-step">
               <span className="ms-workspace-step__index">3</span>
               <div>
-                <strong>直接发送文字或文件</strong>
-                <p>配对完成后，消息区会立即切换为传输工作台。</p>
+                <strong>开始传输</strong>
+                <p>文字、图片与文件都可以轻松分享。</p>
               </div>
             </div>
           </div>
         </section>
       ) : null}
       {peer && !peer.trusted ? (
-        <div className="ms-chat-blocker">完成配对后，这里会开放文字与文件直传。</div>
+        <div className="ms-chat-blocker">尚未完成信任，请先授权后再传输内容。</div>
       ) : null}
       {peer && peer.trusted && !peer.reachable ? (
-        <div className="ms-chat-blocker">设备当前不可达，先等待它重新上线。</div>
+        <div className="ms-chat-blocker">当前设备暂时无法访问，请稍后重试。</div>
       ) : null}
 
       {canSend ? (
         <>
           <div className="ms-section-head">
-            <span className="ms-section-title">最近消息</span>
-            <span className="ms-section-hint">可以直接发送文字或文件</span>
+            <span className="ms-section-title">实时沟通</span>
+            <span className="ms-section-hint">可发送文本与文件</span>
           </div>
 
           <div className="ms-message-list">
             {messages.length === 0 ? (
-              <div className="ms-empty-card">这台设备还没有消息记录，现在就可以开始第一条传输。</div>
+              <div className="ms-empty-card">还没有消息，快来发送第一条吧。</div>
             ) : null}
 
-            {messages.map((message) => (
-              <article
-                key={message.messageId}
-                className={`ms-message-card ${
-                  message.direction === "outgoing" ? "ms-message-card--outgoing" : "ms-message-card--incoming"
-                }`}
-              >
-                <div className="ms-message-card__top">
-                  <strong className="ms-message-kind">{message.kind === "file" ? "文件" : "文字"}</strong>
-                  <span className="ms-message-time">{formatMessageTime(message.createdAt)}</span>
-                </div>
-                <div className="ms-message-body">{message.body}</div>
-                <div className="ms-message-meta">
-                  {message.transfer
-                    ? `${formatFileSize(message.transfer.fileSize)} · ${formatTransferState(message.transfer.state)}`
-                    : formatMessageState(message.status)}
-                </div>
-              </article>
-            ))}
+            {messages.map((message) => {
+              if (message.kind === "file") {
+                return (
+                  <FileMessageCard
+                    key={message.messageId}
+                    message={message}
+                    transfer={message.transfer}
+                  />
+                );
+              }
+
+              return (
+                <article
+                  key={message.messageId}
+                  className={`ms-message-card ${
+                    message.direction === "outgoing" ? "ms-message-card--outgoing" : "ms-message-card--incoming"
+                  }`}
+                >
+                  <div className="ms-message-card__top">
+                    <strong className="ms-message-kind">信息</strong>
+                    <span className="ms-message-time">{formatMessageTime(message.createdAt)}</span>
+                  </div>
+                  <div className="ms-message-body">{message.body}</div>
+                  <div className="ms-message-meta">{formatMessageState(message.status)}</div>
+                </article>
+              );
+            })}
           </div>
 
           <form className="ms-composer" onSubmit={handleSubmit}>
@@ -151,7 +161,7 @@ export function ChatPane({
               className="ms-textarea"
               disabled={sendingText}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="输入一句话，或者选择一个文件立即发送"
+              placeholder="输入消息或者点击下方按钮选择文件"
               rows={4}
               value={draft}
             />
@@ -165,7 +175,7 @@ export function ChatPane({
                 onClick={handlePickFile}
                 type="button"
               >
-                {sendingFile ? "发送文件中..." : "选择文件"}
+                {sendingFile ? "文件上传中..." : "选择文件"}
               </button>
               <input
                 aria-hidden="true"
@@ -187,38 +197,15 @@ export function ChatPane({
 
 function resolveChatCopy(peer?: PeerSummary): string {
   if (!peer) {
-    return "先在设备列表里选中一台设备，再继续配对、发文字或发文件。";
+    return "请选择一个设备，在列表中查看状态并建立连接。";
   }
   if (!peer.trusted) {
-    return "这台设备还没建立信任，请先完成配对。";
+    return "此设备暂未信任，完成配对后才可安全通讯。";
   }
   if (!peer.reachable) {
-    return "已经配对，但它当前不在线。";
+    return "设备已信任但当前不可达，请稍后重试。";
   }
-  return "可以直接发送文字或文件";
-}
-
-function formatFileSize(fileSize: number): string {
-  if (fileSize >= 1024 * 1024) {
-    return `${(fileSize / (1024 * 1024)).toFixed(1)} MB`;
-  }
-  if (fileSize >= 1024) {
-    return `${(fileSize / 1024).toFixed(1)} KB`;
-  }
-  return `${fileSize} B`;
-}
-
-function formatTransferState(state: string): string {
-  if (state === "done") {
-    return "已发送";
-  }
-  if (state === "sending") {
-    return "发送中";
-  }
-  if (state === "failed") {
-    return "发送失败";
-  }
-  return state;
+  return "连接准备就绪，开始发送文本或文件吧。";
 }
 
 function formatMessageState(status: string): string {

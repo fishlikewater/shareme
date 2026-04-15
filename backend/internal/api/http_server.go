@@ -294,25 +294,15 @@ func (s *HTTPServer) handleFileTransfers(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 
-	peerDeviceID := strings.TrimSpace(r.FormValue("peerDeviceId"))
-	if peerDeviceID == "" {
-		http.Error(w, "peerDeviceId is required", http.StatusBadRequest)
-		return
-	}
-
-	file, header, err := r.FormFile("file")
+	peerDeviceID, upload, err := parseStreamingUpload(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer upload.Close()
 
-	transferSnapshot, err := s.app.SendFile(r.Context(), peerDeviceID, header.Filename, header.Size, file)
+	transferSnapshot, err := s.app.SendFile(r.Context(), peerDeviceID, upload.fileName, upload.fileSize, upload.file)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -350,6 +340,100 @@ func parsePairingAction(path string) (string, string, bool) {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
+}
+
+type streamedUpload struct {
+	file     io.ReadCloser
+	fileName string
+	fileSize int64
+}
+
+func (u *streamedUpload) Close() {
+	if u == nil || u.file == nil {
+		return
+	}
+	_ = u.file.Close()
+}
+
+func parseStreamingUpload(r *http.Request) (peerDeviceID string, upload *streamedUpload, err error) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		return "", nil, err
+	}
+
+	defer func() {
+		if err != nil && upload != nil {
+			upload.Close()
+		}
+	}()
+
+	fileSize := int64(0)
+	fileSizeSet := false
+
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", nil, err
+		}
+
+		switch part.FormName() {
+		case "peerDeviceId":
+			value, err := io.ReadAll(part)
+			_ = part.Close()
+			if err != nil {
+				return "", nil, err
+			}
+			peerDeviceID = strings.TrimSpace(string(value))
+		case "fileSize":
+			value, err := io.ReadAll(part)
+			_ = part.Close()
+			if err != nil {
+				return "", nil, err
+			}
+			parsedSize, err := strconv.ParseInt(strings.TrimSpace(string(value)), 10, 64)
+			if err != nil || parsedSize < 0 {
+				return "", nil, errors.New("invalid fileSize")
+			}
+			fileSize = parsedSize
+			fileSizeSet = true
+		case "file":
+			if strings.TrimSpace(peerDeviceID) == "" {
+				_ = part.Close()
+				return "", nil, errors.New("peerDeviceId is required")
+			}
+			if !fileSizeSet {
+				_ = part.Close()
+				return "", nil, errors.New("fileSize is required")
+			}
+			upload = &streamedUpload{
+				file:     part,
+				fileName: part.FileName(),
+				fileSize: fileSize,
+			}
+			return peerDeviceID, upload, nil
+		default:
+			if _, err := io.Copy(io.Discard, part); err != nil {
+				_ = part.Close()
+				return "", nil, err
+			}
+			_ = part.Close()
+		}
+	}
+
+	if strings.TrimSpace(peerDeviceID) == "" {
+		return "", nil, errors.New("peerDeviceId is required")
+	}
+	if !fileSizeSet {
+		return "", nil, errors.New("fileSize is required")
+	}
+	if upload == nil {
+		return "", nil, errors.New("file is required")
+	}
+
+	return peerDeviceID, upload, nil
 }
 
 func allowLoopbackBrowserAccess(w http.ResponseWriter, r *http.Request) bool {

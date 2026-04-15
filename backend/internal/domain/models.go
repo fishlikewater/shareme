@@ -36,10 +36,16 @@ type Message struct {
 }
 
 type Transfer struct {
-	TransferID string
-	MessageID  string
-	FileName   string
-	FileSize   int64
-	State      string
-	CreatedAt  time.Time
+	TransferID       string
+	MessageID        string
+	FileName         string
+	FileSize         int64
+	State            string
+	Direction        string
+	BytesTransferred int64
+	ProgressPercent  float64
+	RateBytesPerSec  float64
+	EtaSeconds       *int64
+	Active           bool
+	CreatedAt        time.Time
 }

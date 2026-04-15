@@ -104,7 +104,9 @@ describe("createLocalApiClient", () => {
 
     const body = init.body as FormData;
     expect(body.get("peerDeviceId")).toBe("peer-1");
+    expect(body.get("fileSize")).toBe(String(file.size));
     expect((body.get("file") as File).name).toBe("hello.txt");
+    expect(Array.from(body.keys())).toEqual(["peerDeviceId", "fileSize", "file"]);
   });
 
   it("事件流手动重连时会带上最近处理成功的 eventSeq", () => {

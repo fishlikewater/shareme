@@ -47,6 +47,12 @@ export type TransferSnapshot = {
   fileSize: number;
   state: string;
   createdAt: string;
+  direction: "incoming" | "outgoing" | string;
+  bytesTransferred: number;
+  progressPercent: number;
+  rateBytesPerSec: number;
+  etaSeconds: number | null;
+  active: boolean;
 };
 
 export type BootstrapSnapshot = {

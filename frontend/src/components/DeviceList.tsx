@@ -74,7 +74,7 @@ function describePeer(peer: PeerSummary): string {
     return peer.pairing ? "等待你确认短码" : "尚未建立信任";
   }
   if (!peer.online) {
-    return "已配对，但当前离线";
+    return "已配对，可继续直连";
   }
   return "已配对，可立即发送";
 }
@@ -84,7 +84,7 @@ function resolvePreview(peer: PeerSummary): string {
     return "先完成配对，再开始发送文字或文件";
   }
   if (!peer.reachable) {
-    return "设备当前不在线，暂时不能建立直连传输";
+    return "设备已发现，但当前无法建立直连传输";
   }
   return "可以开始发送文字、图片以外的任意文件";
 }

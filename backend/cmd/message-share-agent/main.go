@@ -53,11 +53,10 @@ func main() {
 	peerTransport := protocol.NewHTTPPeerTransport(protocol.HTTPPeerTransportOptions{
 		Scheme: "https",
 		ClientFactory: func(expectedFingerprint string) *http.Client {
-			return &http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: security.NewClientTLSConfig(peerCertificate, expectedFingerprint),
-				},
-			}
+			return protocol.NewPeerHTTPClient(security.NewClientTLSConfig(peerCertificate, expectedFingerprint))
+		},
+		TransferClientFactory: func(expectedFingerprint string) *http.Client {
+			return protocol.NewLANPeerHTTPClient(security.NewClientTLSConfig(peerCertificate, expectedFingerprint))
 		},
 	})
 	runtimeService := app.NewRuntimeService(app.RuntimeDeps{
@@ -88,23 +87,53 @@ func main() {
 	if err := discoveryRunner.Start(ctx); err != nil {
 		log.Fatalf("start discovery runner: %v", err)
 	}
-	defer discoveryRunner.Close()
 
 	peerServer := &http.Server{
 		Addr:      fmt.Sprintf(":%d", cfg.AgentTCPPort),
 		Handler:   protocol.NewPeerHTTPServer(runtimeService),
 		TLSConfig: security.NewServerTLSConfig(peerCertificate),
 	}
+	peerServerErrors := make(chan error, 1)
 	go func() {
 		if err := peerServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-			log.Printf("peer server stopped with error: %v", err)
+			peerServerErrors <- err
 		}
 	}()
-	defer peerServer.Shutdown(context.Background())
+	go runtimeService.RunHeartbeatLoop(ctx)
 
-	server := api.NewHTTPServer(runtimeService, eventBus, webui.Assets())
+	localAPI := api.NewHTTPServer(runtimeService, eventBus, webui.Assets())
+	localServer := &http.Server{
+		Addr:    cfg.LocalAPIAddr,
+		Handler: localAPI.Handler(),
+	}
+	localServerErrors := make(chan error, 1)
 	log.Printf("Message Share agent bootstrap on %s", cfg.LocalAPIAddr)
-	log.Fatal(http.ListenAndServe(cfg.LocalAPIAddr, server.Handler()))
+	go func() {
+		if err := localServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			localServerErrors <- err
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+	case err := <-peerServerErrors:
+		log.Fatalf("peer server stopped with error: %v", err)
+	case err := <-localServerErrors:
+		log.Fatalf("local api server stopped with error: %v", err)
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	if err := localServer.Shutdown(shutdownCtx); err != nil && err != http.ErrServerClosed {
+		log.Printf("shutdown local api server: %v", err)
+	}
+	if err := peerServer.Shutdown(shutdownCtx); err != nil && err != http.ErrServerClosed {
+		log.Printf("shutdown peer server: %v", err)
+	}
+	if err := discoveryRunner.Close(); err != nil {
+		log.Printf("close discovery runner: %v", err)
+	}
 }
 
 func publishPeerUpdate(service *app.RuntimeService, eventBus *api.EventBus, deviceID string, agentPort int) {

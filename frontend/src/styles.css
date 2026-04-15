@@ -1,21 +1,21 @@
 :root {
   color-scheme: light;
-  --ms-bg: #f6efe6;
-  --ms-bg-2: #d8ebe4;
-  --ms-panel: rgba(255, 252, 247, 0.86);
-  --ms-panel-strong: linear-gradient(180deg, rgba(8, 72, 76, 0.96), rgba(18, 43, 58, 0.98));
-  --ms-border: rgba(25, 52, 64, 0.08);
-  --ms-shadow: 0 28px 70px rgba(24, 49, 58, 0.14);
-  --ms-text: #18313f;
-  --ms-muted: #657782;
-  --ms-muted-strong: #3d5563;
-  --ms-teal: #0c6762;
-  --ms-teal-deep: #0f4544;
-  --ms-orange: #c86e2d;
-  --ms-amber: #f8b25f;
+  --ms-bg: #fdf8f1;
+  --ms-bg-alt: #f7efe4;
+  --ms-panel: #fffdf7;
+  --ms-panel-strong: linear-gradient(155deg, rgba(7, 57, 51, 0.92), rgba(19, 35, 45, 0.95));
+  --ms-border: rgba(17, 65, 58, 0.16);
+  --ms-shadow: 0 32px 65px rgba(11, 43, 36, 0.18);
+  --ms-text: #1b2b27;
+  --ms-muted: #5c6b5f;
+  --ms-muted-strong: #2d4039;
+  --ms-teal: #0e6560;
+  --ms-teal-deep: #07423a;
+  --ms-warm: #f4d7b4;
+  --ms-gold: #c16f2d;
   --ms-ok: #2e8660;
-  --ms-warn: #bc6b1d;
-  --ms-danger: #ba4a4a;
+  --ms-warn: #c36d2b;
+  --ms-danger: #a43b38;
   --ms-display: "Segoe UI Variable Display", "Bahnschrift", "Microsoft YaHei", sans-serif;
   --ms-body: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
 }
@@ -35,9 +35,9 @@ body {
   font-family: var(--ms-body);
   color: var(--ms-text);
   background:
-    radial-gradient(circle at top left, rgba(236, 165, 94, 0.2), transparent 28%),
-    radial-gradient(circle at top right, rgba(61, 144, 136, 0.18), transparent 24%),
-    linear-gradient(180deg, #f8f4ee 0%, var(--ms-bg) 40%, #f4ede4 100%);
+    radial-gradient(circle at 18% 12%, rgba(243, 198, 140, 0.32), transparent 38%),
+    radial-gradient(circle at 80% 0%, rgba(12, 101, 96, 0.2), transparent 32%),
+    linear-gradient(180deg, #fffdf7 0%, var(--ms-bg-alt) 65%, #f1e7dd 100%);
 }
 
 button,
@@ -52,14 +52,20 @@ button {
 
 .ms-app {
   min-height: 100vh;
-  padding: clamp(16px, 3vw, 36px);
+  padding: clamp(20px, 3vw, 42px);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
 
 .ms-shell {
   width: min(1440px, 100%);
   margin: 0 auto;
   display: grid;
-  gap: 18px;
+  gap: 24px;
+  position: relative;
+  padding: clamp(12px, 2vw, 32px);
+  align-items: start;
 }
 
 .ms-panel,
@@ -468,7 +474,7 @@ button {
 
 .ms-badge--warn {
   background: rgba(200, 110, 45, 0.14);
-  color: var(--ms-orange);
+  color: var(--ms-gold);
 }
 
 .ms-badge--neutral {
@@ -491,6 +497,172 @@ button {
 .ms-chat-panel {
   display: grid;
   gap: 18px;
+}
+
+.ms-transfer-banner {
+  padding: 20px;
+  border-radius: 32px;
+  background: linear-gradient(135deg, rgba(255, 255, 253, 0.92), rgba(243, 220, 191, 0.9));
+  border: 1px solid rgba(13, 51, 44, 0.16);
+  box-shadow: 0 22px 50px rgba(11, 43, 36, 0.18);
+  display: grid;
+  gap: 14px;
+}
+
+.ms-transfer-banner__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.ms-transfer-banner__lead {
+  margin: 0;
+  color: var(--ms-muted-strong);
+  font-size: 15px;
+}
+
+.ms-transfer-banner__grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.ms-transfer-banner__card {
+  padding: 16px;
+  border-radius: 24px;
+  background: #fff;
+  border: 1px solid rgba(10, 45, 40, 0.08);
+  box-shadow: 0 12px 30px rgba(11, 43, 36, 0.12);
+  display: grid;
+  gap: 10px;
+}
+
+.ms-transfer-banner__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-transfer-banner__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-transfer-banner__direction {
+  font-size: 13px;
+  color: var(--ms-ok);
+  font-weight: 600;
+}
+
+.ms-transfer-banner__progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.ms-transfer-banner__progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(12, 101, 96, 0.12);
+  overflow: hidden;
+}
+
+.ms-transfer-banner__progress-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(135deg, var(--ms-teal), var(--ms-teal-deep));
+  border-radius: 999px;
+  transition: width 180ms linear;
+  will-change: width;
+}
+
+.ms-transfer-banner__percent {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ms-muted-strong);
+}
+
+.ms-transfer-banner__details {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ms-muted);
+}
+
+.ms-file-card {
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(9, 58, 52, 0.08);
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(11, 43, 36, 0.12);
+  display: grid;
+  gap: 12px;
+}
+
+.ms-file-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.ms-file-card__time {
+  font-size: 13px;
+  color: var(--ms-muted);
+}
+
+.ms-file-card__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ms-text);
+}
+
+.ms-file-card__progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.ms-file-card__progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(12, 101, 96, 0.12);
+  overflow: hidden;
+}
+
+.ms-file-card__progress-bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--ms-teal), var(--ms-teal-deep));
+  transition: width 180ms linear;
+  will-change: width;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ms-transfer-banner__progress-fill,
+  .ms-file-card__progress-bar {
+    transition: none;
+  }
+}
+
+.ms-file-card__percent {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ms-muted-strong);
+}
+
+.ms-file-card__meta {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ms-muted);
 }
 
 .ms-chat-header {
@@ -625,16 +797,18 @@ button {
   display: grid;
   gap: 10px;
   padding: 16px;
-  border-radius: 22px;
-  line-height: 1.55;
+  border-radius: 24px;
+  background: #fff;
+  border: 1px solid rgba(12, 53, 46, 0.08);
+  box-shadow: 0 12px 30px rgba(11, 43, 36, 0.1);
 }
 
 .ms-message-card--incoming {
-  background: rgba(236, 244, 246, 0.92);
+  background: linear-gradient(135deg, rgba(247, 244, 238, 0.95), rgba(237, 232, 218, 0.9));
 }
 
 .ms-message-card--outgoing {
-  background: linear-gradient(135deg, rgba(216, 239, 231, 0.96), rgba(240, 248, 244, 0.94));
+  background: linear-gradient(135deg, rgba(219, 243, 238, 0.95), rgba(204, 234, 226, 0.9));
 }
 
 .ms-message-card__top {

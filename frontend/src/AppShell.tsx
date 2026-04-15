@@ -3,6 +3,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPane } from "./components/ChatPane";
 import { HealthBanner } from "./components/HealthBanner";
 import { PairCodeDialog } from "./components/PairCodeDialog";
+import { TransferStatusBanner } from "./components/TransferStatusBanner";
 import { createLocalApiClient, type LocalApi } from "./lib/api";
 import type {
   AgentEvent,
@@ -115,6 +116,10 @@ export default function AppShell({ api }: AppProps) {
   const selectedMessages = useMemo(
     () => (snapshot && selectedPeer ? buildConversationMessages(snapshot, selectedPeer.deviceId) : []),
     [selectedPeer, snapshot],
+  );
+  const activeTransfers = useMemo(
+    () => (snapshot ? snapshot.transfers.filter((transfer) => transfer.active) : []),
+    [snapshot],
   );
 
   async function handleStartPairing() {
@@ -268,7 +273,7 @@ export default function AppShell({ api }: AppProps) {
               <article className="ms-stat-card">
                 <span className="ms-stat-card__label">可直传</span>
                 <strong className="ms-stat-card__value">{readyCount}</strong>
-                <span className="ms-stat-card__hint">在线且可达</span>
+                <span className="ms-stat-card__hint">已信任且可连接</span>
               </article>
               <article className="ms-stat-card">
                 <span className="ms-stat-card__label">待配对</span>
@@ -279,6 +284,7 @@ export default function AppShell({ api }: AppProps) {
           </section>
         </section>
 
+        <TransferStatusBanner transfers={activeTransfers} />
         <HealthBanner health={snapshot.health} lastEventSeq={snapshot.eventSeq ?? 0} />
         {commandError ? (
           <section className="ms-command-error" role="alert">

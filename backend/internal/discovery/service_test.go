@@ -173,3 +173,122 @@ func TestRegistryListMarksExpiredPeerOffline(t *testing.T) {
 		t.Fatalf("expected fresh peer to stay reachable, got %#v", byID["peer-fresh"])
 	}
 }
+
+func TestRegistryMarkDirectActiveKeepsPeerReachableWithoutFreshBroadcast(t *testing.T) {
+	registry := NewRegistry()
+	now := time.Now().UTC()
+
+	registry.Upsert(Announcement{
+		ProtocolVersion: "1",
+		DeviceID:        "peer-1",
+		DeviceName:      "peer-one",
+		AgentTCPPort:    19090,
+	}, "192.168.1.20:52351", now.Add(-10*time.Second))
+
+	registry.MarkDirectActive("peer-1", "", 0, now)
+
+	records := registry.List()
+	if len(records) != 1 {
+		t.Fatalf("expected one peer, got %#v", records)
+	}
+	if records[0].Online {
+		t.Fatalf("expected peer to be offline after discovery ttl, got %#v", records[0])
+	}
+	if !records[0].Reachable {
+		t.Fatalf("expected direct activity to keep peer reachable, got %#v", records[0])
+	}
+}
+
+func TestRegistryKeepsRecoveredPeerReachablePastDiscoveryTTL(t *testing.T) {
+	registry := NewRegistry()
+	now := time.Now().UTC()
+
+	registry.Upsert(Announcement{
+		ProtocolVersion: "1",
+		DeviceID:        "peer-3",
+		DeviceName:      "peer-three",
+		AgentTCPPort:    19090,
+	}, "192.168.1.30:52351", now.Add(-10*time.Second))
+	registry.MarkReachable("peer-3", false)
+	registry.MarkDirectActive("peer-3", "", 0, now.Add(-30*time.Second))
+
+	records := registry.List()
+	if len(records) != 1 {
+		t.Fatalf("expected one peer, got %#v", records)
+	}
+	if records[0].Online {
+		t.Fatalf("expected peer to stay offline, got %#v", records[0])
+	}
+	if !records[0].Reachable {
+		t.Fatalf("expected recovered peer to stay reachable while direct activity is still fresh, got %#v", records[0])
+	}
+}
+
+func TestRegistryRecoveredPeerReachabilityExpiresAfterDirectTTL(t *testing.T) {
+	registry := NewRegistry()
+	now := time.Now().UTC()
+
+	registry.Upsert(Announcement{
+		ProtocolVersion: "1",
+		DeviceID:        "peer-4",
+		DeviceName:      "peer-four",
+		AgentTCPPort:    19090,
+	}, "192.168.1.40:52351", now.Add(-10*time.Second))
+	registry.MarkReachable("peer-4", false)
+	registry.MarkDirectActive("peer-4", "", 0, now.Add(-directReachabilityTTL-time.Second))
+
+	records := registry.List()
+	if len(records) != 1 {
+		t.Fatalf("expected one peer, got %#v", records)
+	}
+	if records[0].Reachable {
+		t.Fatalf("expected recovered peer to expire after direct ttl, got %#v", records[0])
+	}
+}
+
+func TestRegistryFreshBroadcastDoesNotOverrideDirectFailureState(t *testing.T) {
+	registry := NewRegistry()
+	now := time.Now().UTC()
+
+	registry.Upsert(Announcement{
+		ProtocolVersion: "1",
+		DeviceID:        "peer-5",
+		DeviceName:      "peer-five",
+		AgentTCPPort:    19090,
+	}, "192.168.1.50:52351", now.Add(-2*time.Second))
+	registry.MarkDirectActive("peer-5", "192.168.1.50:19090", 19090, now.Add(-time.Second))
+	registry.MarkReachable("peer-5", false)
+
+	registry.Upsert(Announcement{
+		ProtocolVersion: "1",
+		DeviceID:        "peer-5",
+		DeviceName:      "peer-five",
+		AgentTCPPort:    19090,
+	}, "192.168.1.50:52351", now)
+
+	records := registry.List()
+	if len(records) != 1 {
+		t.Fatalf("expected one peer, got %#v", records)
+	}
+	if !records[0].Online {
+		t.Fatalf("expected peer to stay online after fresh broadcast, got %#v", records[0])
+	}
+	if records[0].Reachable {
+		t.Fatalf("expected direct failure state to survive broadcast refresh, got %#v", records[0])
+	}
+}
+
+func TestRegistryMarkDirectActiveNeedsKnownEndpointToReportReachable(t *testing.T) {
+	registry := NewRegistry()
+	now := time.Now().UTC()
+
+	registry.MarkDirectActive("peer-2", "", 0, now)
+
+	records := registry.List()
+	if len(records) != 1 {
+		t.Fatalf("expected one peer, got %#v", records)
+	}
+	if records[0].Reachable {
+		t.Fatalf("expected peer without endpoint to stay unreachable, got %#v", records[0])
+	}
+}

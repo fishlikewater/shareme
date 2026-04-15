@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import App from "./App";
@@ -68,6 +68,12 @@ class FakeApi implements LocalApi {
       fileSize: file.size,
       state: "done",
       createdAt: "2026-04-10T08:25:00Z",
+      direction: "outgoing",
+      bytesTransferred: file.size,
+      progressPercent: 100,
+      rateBytesPerSec: 0,
+      etaSeconds: 0,
+      active: false,
     };
   }
 
@@ -142,6 +148,38 @@ const bootstrapSnapshot: BootstrapSnapshot = {
   eventSeq: 7,
 };
 
+const activeTransferSnapshot: TransferSnapshot = {
+  transferId: "transfer-banner-1",
+  messageId: "msg-banner-1",
+  fileName: "demo.pdf",
+  fileSize: 2_097_152,
+  state: "sending",
+  createdAt: "2026-04-10T09:00:00Z",
+  direction: "outgoing",
+  bytesTransferred: 1_048_576,
+  progressPercent: 50,
+  rateBytesPerSec: 512_000,
+  etaSeconds: 4,
+  active: true,
+};
+
+const bootstrapSnapshotWithActiveTransfer: BootstrapSnapshot = {
+  ...bootstrapSnapshot,
+  messages: [
+    ...bootstrapSnapshot.messages,
+    {
+      messageId: "msg-banner-1",
+      conversationId: "conv-peer-1",
+      direction: "outgoing",
+      kind: "file",
+      body: "demo.pdf",
+      status: "sending",
+      createdAt: "2026-04-10T09:00:00Z",
+    },
+  ],
+  transfers: [activeTransferSnapshot],
+};
+
 describe("App", () => {
   it("渲染新的传输工作台并展示设备与历史消息", async () => {
     const api = new FakeApi(bootstrapSnapshot);
@@ -159,7 +197,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /办公室副机/ }));
 
-    expect(screen.getByText("最近消息")).toBeInTheDocument();
+    expect(screen.getByText("实时沟通")).toBeInTheDocument();
     expect(screen.getAllByText("昨晚的文件已经收到").length).toBeGreaterThan(0);
     expect(screen.getByRole("textbox", { name: "消息输入框" })).toBeInTheDocument();
   });
@@ -177,14 +215,14 @@ describe("App", () => {
     await waitFor(() => {
       expect(api.startedPairings).toEqual(["peer-2"]);
     });
-    expect(screen.getByText("314159")).toBeInTheDocument();
+    expect(await screen.findByText("314159")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "确认配对" }));
     await waitFor(() => {
       expect(api.confirmedPairings).toEqual(["pair-2"]);
     });
 
-    expect(screen.getByText("314159")).toBeInTheDocument();
+    expect(await screen.findByText("314159")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "开始配对" })).not.toBeInTheDocument();
     expect(screen.getByText("已确认短码，正在等待设备完成信任同步。")).toBeInTheDocument();
 
@@ -202,7 +240,7 @@ describe("App", () => {
       });
     });
 
-    expect(screen.getAllByText("可以直接发送文字或文件").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("可以开始发送文字、图片以外的任意文件").length).toBeGreaterThan(0);
     expect(screen.getByRole("textbox", { name: "消息输入框" })).toBeInTheDocument();
   });
 
@@ -257,5 +295,18 @@ describe("App", () => {
 
     expect(await screen.findByText("无法连接本机代理")).toBeInTheDocument();
     expect(screen.getByText("ECONNREFUSED")).toBeInTheDocument();
+  });
+
+  it("顶部横幅会展示处于活动状态的文件传输", async () => {
+    const api = new FakeApi(bootstrapSnapshotWithActiveTransfer);
+
+    render(<App api={api} />);
+
+    const banner = await screen.findByLabelText("传输横幅");
+    expect(within(banner).getByText("文件传输")).toBeInTheDocument();
+    expect(within(banner).getByText("demo.pdf")).toBeInTheDocument();
+    expect(within(banner).getByText("50%")).toBeInTheDocument();
+    expect(within(banner).getByText("发送")).toBeInTheDocument();
+    expect(within(banner).getByText("ETA 00:04")).toBeInTheDocument();
   });
 });

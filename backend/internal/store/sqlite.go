@@ -35,7 +35,7 @@ func Open(dsn string) (*DB, error) {
 		`create table if not exists trusted_peers (device_id text primary key, device_name text not null, pinned_fingerprint text not null, remark_name text not null default '', trusted integer not null, updated_at text not null);`,
 		`create table if not exists conversations (conversation_id text primary key, peer_device_id text not null, updated_at text not null);`,
 		`create table if not exists messages (message_id text primary key, conversation_id text not null, direction text not null default 'outgoing', kind text not null, body text not null, status text not null, created_at text not null);`,
-		`create table if not exists transfers (transfer_id text primary key, message_id text not null, file_name text not null, file_size integer not null, state text not null, created_at text not null);`,
+		`create table if not exists transfers (transfer_id text primary key, message_id text not null, file_name text not null, file_size integer not null, state text not null, direction text not null default 'outgoing', bytes_transferred integer not null default 0, created_at text not null);`,
 	}
 
 	for _, stmt := range schema {
@@ -46,6 +46,23 @@ func Open(dsn string) (*DB, error) {
 	}
 
 	if _, err := raw.Exec(`alter table messages add column direction text not null default 'outgoing'`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		_ = raw.Close()
+		return nil, err
+	}
+	if _, err := raw.Exec(`alter table transfers add column direction text not null default 'outgoing'`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		_ = raw.Close()
+		return nil, err
+	}
+	if _, err := raw.Exec(`alter table transfers add column bytes_transferred integer not null default 0`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		_ = raw.Close()
+		return nil, err
+	}
+	if _, err := raw.Exec(`update transfers
+		set direction = coalesce(
+			(select messages.direction from messages where messages.message_id = transfers.message_id),
+			direction,
+			'outgoing'
+		)`); err != nil {
 		_ = raw.Close()
 		return nil, err
 	}
@@ -264,7 +281,14 @@ func (db *DB) ListConversations() ([]domain.Conversation, error) {
 func (db *DB) SaveMessage(message domain.Message) error {
 	_, err := db.raw.Exec(
 		`insert into messages (message_id, conversation_id, direction, kind, body, status, created_at)
-		values (?, ?, ?, ?, ?, ?, ?)`,
+		values (?, ?, ?, ?, ?, ?, ?)
+		on conflict(message_id) do update set
+			conversation_id = excluded.conversation_id,
+			direction = excluded.direction,
+			kind = excluded.kind,
+			body = excluded.body,
+			status = excluded.status,
+			created_at = excluded.created_at`,
 		message.MessageID,
 		message.ConversationID,
 		message.Direction,
@@ -274,6 +298,57 @@ func (db *DB) SaveMessage(message domain.Message) error {
 		formatTime(message.CreatedAt),
 	)
 	return err
+}
+
+func (db *DB) SaveMessageWithTransfer(message domain.Message, transfer domain.Transfer) error {
+	tx, err := db.raw.Begin()
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(
+		`insert into messages (message_id, conversation_id, direction, kind, body, status, created_at)
+		values (?, ?, ?, ?, ?, ?, ?)
+		on conflict(message_id) do update set
+			conversation_id = excluded.conversation_id,
+			direction = excluded.direction,
+			kind = excluded.kind,
+			body = excluded.body,
+			status = excluded.status,
+			created_at = excluded.created_at`,
+		message.MessageID,
+		message.ConversationID,
+		message.Direction,
+		message.Kind,
+		message.Body,
+		message.Status,
+		formatTime(message.CreatedAt),
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	direction := transfer.Direction
+	if strings.TrimSpace(direction) == "" {
+		direction = "outgoing"
+	}
+	if _, err := tx.Exec(
+		`insert into transfers (transfer_id, message_id, file_name, file_size, state, direction, bytes_transferred, created_at)
+		values (?, ?, ?, ?, ?, ?, ?, ?)`,
+		transfer.TransferID,
+		transfer.MessageID,
+		transfer.FileName,
+		transfer.FileSize,
+		transfer.State,
+		direction,
+		transfer.BytesTransferred,
+		formatTime(transfer.CreatedAt),
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (db *DB) ListMessages(conversationID string) ([]domain.Message, error) {
@@ -312,14 +387,20 @@ func (db *DB) ListMessages(conversationID string) ([]domain.Message, error) {
 }
 
 func (db *DB) SaveTransfer(transfer domain.Transfer) error {
+	direction := transfer.Direction
+	if strings.TrimSpace(direction) == "" {
+		direction = "outgoing"
+	}
 	_, err := db.raw.Exec(
-		`insert into transfers (transfer_id, message_id, file_name, file_size, state, created_at)
-		values (?, ?, ?, ?, ?, ?)`,
+		`insert into transfers (transfer_id, message_id, file_name, file_size, state, direction, bytes_transferred, created_at)
+		values (?, ?, ?, ?, ?, ?, ?, ?)`,
 		transfer.TransferID,
 		transfer.MessageID,
 		transfer.FileName,
 		transfer.FileSize,
 		transfer.State,
+		direction,
+		transfer.BytesTransferred,
 		formatTime(transfer.CreatedAt),
 	)
 	return err
@@ -330,9 +411,70 @@ func (db *DB) UpdateTransferState(transferID string, state string) error {
 	return err
 }
 
+func (db *DB) UpdateTransferProgress(transferID string, state string, bytesTransferred int64) error {
+	_, err := db.raw.Exec(
+		`update transfers set state = ?, bytes_transferred = ? where transfer_id = ?`,
+		state,
+		bytesTransferred,
+		transferID,
+	)
+	return err
+}
+
+func (db *DB) PersistTransferOutcome(message *domain.Message, transfer domain.Transfer) error {
+	tx, err := db.raw.Begin()
+	if err != nil {
+		return err
+	}
+
+	if message != nil {
+		if _, err := tx.Exec(
+			`insert into messages (message_id, conversation_id, direction, kind, body, status, created_at)
+			values (?, ?, ?, ?, ?, ?, ?)
+			on conflict(message_id) do update set
+				conversation_id = excluded.conversation_id,
+				direction = excluded.direction,
+				kind = excluded.kind,
+				body = excluded.body,
+				status = excluded.status,
+				created_at = excluded.created_at`,
+			message.MessageID,
+			message.ConversationID,
+			message.Direction,
+			message.Kind,
+			message.Body,
+			message.Status,
+			formatTime(message.CreatedAt),
+		); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+
+	direction := transfer.Direction
+	if strings.TrimSpace(direction) == "" {
+		direction = "outgoing"
+	}
+	if _, err := tx.Exec(
+		`update transfers
+			set state = ?, direction = ?, bytes_transferred = ?, file_size = ?
+			where transfer_id = ?`,
+		transfer.State,
+		direction,
+		transfer.BytesTransferred,
+		transfer.FileSize,
+		transfer.TransferID,
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (db *DB) ListTransfers() ([]domain.Transfer, error) {
 	rows, err := db.raw.Query(
-		`select transfer_id, message_id, file_name, file_size, state, created_at
+		`select transfer_id, message_id, file_name, file_size, state, direction, bytes_transferred, created_at
 		from transfers
 		order by created_at asc`,
 	)
@@ -351,6 +493,8 @@ func (db *DB) ListTransfers() ([]domain.Transfer, error) {
 			&transfer.FileName,
 			&transfer.FileSize,
 			&transfer.State,
+			&transfer.Direction,
+			&transfer.BytesTransferred,
 			&createdAt,
 		); err != nil {
 			return nil, err

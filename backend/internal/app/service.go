@@ -4,11 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"message-share/backend/internal/config"
@@ -19,6 +23,17 @@ import (
 	"message-share/backend/internal/security"
 	"message-share/backend/internal/session"
 	"message-share/backend/internal/transfer"
+)
+
+const (
+	defaultHeartbeatInterval              = 30 * time.Second
+	defaultHeartbeatTimeout               = 4 * time.Second
+	defaultHeartbeatFailureThreshold      = 3
+	defaultIncomingTransferSessionTimeout = 2 * time.Minute
+	multipartThreshold                    = 64 << 20
+	transferCopyBufferSize                = 1 << 20
+	transferEventMinInterval              = 120 * time.Millisecond
+	transferEventMinBytes                 = 0
 )
 
 type PeerSnapshot struct {
@@ -56,12 +71,18 @@ type MessageSnapshot struct {
 }
 
 type TransferSnapshot struct {
-	TransferID string `json:"transferId"`
-	MessageID  string `json:"messageId"`
-	FileName   string `json:"fileName"`
-	FileSize   int64  `json:"fileSize"`
-	State      string `json:"state"`
-	CreatedAt  string `json:"createdAt"`
+	TransferID       string  `json:"transferId"`
+	MessageID        string  `json:"messageId"`
+	FileName         string  `json:"fileName"`
+	FileSize         int64   `json:"fileSize"`
+	State            string  `json:"state"`
+	Direction        string  `json:"direction"`
+	BytesTransferred int64   `json:"bytesTransferred"`
+	ProgressPercent  float64 `json:"progressPercent"`
+	RateBytesPerSec  float64 `json:"rateBytesPerSec"`
+	EtaSeconds       *int64  `json:"etaSeconds,omitempty"`
+	Active           bool    `json:"active"`
+	CreatedAt        string  `json:"createdAt"`
 }
 
 type BootstrapSnapshot struct {
@@ -81,10 +102,13 @@ type Store interface {
 	EnsureConversation(peerDeviceID string) (domain.Conversation, error)
 	ListConversations() ([]domain.Conversation, error)
 	SaveMessage(message domain.Message) error
+	SaveMessageWithTransfer(message domain.Message, transfer domain.Transfer) error
 	ListMessages(conversationID string) ([]domain.Message, error)
 	SaveTransfer(transfer domain.Transfer) error
 	ListTransfers() ([]domain.Transfer, error)
 	UpdateTransferState(transferID string, state string) error
+	UpdateTransferProgress(transferID string, state string, bytesTransferred int64) error
+	PersistTransferOutcome(message *domain.Message, transfer domain.Transfer) error
 }
 
 type Service interface {
@@ -116,6 +140,7 @@ type PairingManager interface {
 type PeerTransport interface {
 	StartPairing(ctx context.Context, peer discovery.PeerRecord, request protocol.PairingStartRequest) (protocol.PairingStartResponse, error)
 	ConfirmPairing(ctx context.Context, peer discovery.PeerRecord, request protocol.PairingConfirmRequest) (protocol.PairingConfirmResponse, error)
+	SendHeartbeat(ctx context.Context, peer discovery.PeerRecord, request protocol.HeartbeatRequest) (protocol.HeartbeatResponse, error)
 	SendTextMessage(ctx context.Context, peer discovery.PeerRecord, request protocol.TextMessageRequest) (protocol.AckResponse, error)
 	SendFile(ctx context.Context, peer discovery.PeerRecord, request protocol.FileTransferRequest, content io.Reader) (protocol.FileTransferResponse, error)
 }
@@ -127,6 +152,12 @@ type RuntimeDeps struct {
 	Pairings  PairingManager
 	Events    EventPublisher
 	Transport PeerTransport
+	Transfers *transfer.Registry
+
+	HeartbeatInterval              time.Duration
+	HeartbeatTimeout               time.Duration
+	HeartbeatFailureThreshold      int
+	IncomingTransferSessionTimeout time.Duration
 }
 
 type RuntimeService struct {
@@ -136,6 +167,42 @@ type RuntimeService struct {
 	pairings  PairingManager
 	events    EventPublisher
 	transport PeerTransport
+	transfers *transfer.Registry
+
+	heartbeatInterval              time.Duration
+	heartbeatTimeout               time.Duration
+	heartbeatFailureThreshold      int
+	incomingTransferSessionTimeout time.Duration
+	heartbeatMu                    sync.Mutex
+	heartbeatFailures              map[string]int
+
+	overrideMu sync.RWMutex
+	overrides  map[string]domain.Transfer
+
+	sessionMu               sync.RWMutex
+	incomingTransferSession map[string]*incomingTransferSession
+}
+
+type incomingTransferSession struct {
+	mu                    sync.Mutex
+	senderDeviceID        string
+	agentTCPPort          int
+	adaptivePolicyVersion string
+	transferRecord        domain.Transfer
+	receiver              *transfer.SessionReceiver
+	telemetry             *transfer.Telemetry
+	progressGate          *transfer.ProgressEventGate
+	progressWarm          bool
+	idleTimeout           time.Duration
+	idleTimer             *time.Timer
+	activeParts           int
+	closed                bool
+}
+
+func (s *incomingTransferSession) resetIdleTimerLocked() {
+	if s.idleTimer != nil && s.idleTimeout > 0 {
+		s.idleTimer.Reset(s.idleTimeout)
+	}
 }
 
 func NewRuntimeService(deps RuntimeDeps) *RuntimeService {
@@ -145,14 +212,37 @@ func NewRuntimeService(deps RuntimeDeps) *RuntimeService {
 	if deps.Pairings == nil {
 		deps.Pairings = session.NewService()
 	}
+	if deps.Transfers == nil {
+		deps.Transfers = transfer.NewRegistry()
+	}
+	if deps.HeartbeatInterval <= 0 {
+		deps.HeartbeatInterval = defaultHeartbeatInterval
+	}
+	if deps.HeartbeatTimeout <= 0 {
+		deps.HeartbeatTimeout = defaultHeartbeatTimeout
+	}
+	if deps.HeartbeatFailureThreshold <= 0 {
+		deps.HeartbeatFailureThreshold = defaultHeartbeatFailureThreshold
+	}
+	if deps.IncomingTransferSessionTimeout <= 0 {
+		deps.IncomingTransferSessionTimeout = defaultIncomingTransferSessionTimeout
+	}
 
 	return &RuntimeService{
-		cfg:       deps.Config,
-		store:     deps.Store,
-		discovery: deps.Discovery,
-		pairings:  deps.Pairings,
-		events:    deps.Events,
-		transport: deps.Transport,
+		cfg:                            deps.Config,
+		store:                          deps.Store,
+		discovery:                      deps.Discovery,
+		pairings:                       deps.Pairings,
+		events:                         deps.Events,
+		transport:                      deps.Transport,
+		transfers:                      deps.Transfers,
+		heartbeatInterval:              deps.HeartbeatInterval,
+		heartbeatTimeout:               deps.HeartbeatTimeout,
+		heartbeatFailureThreshold:      deps.HeartbeatFailureThreshold,
+		incomingTransferSessionTimeout: deps.IncomingTransferSessionTimeout,
+		heartbeatFailures:              make(map[string]int),
+		overrides:                      make(map[string]domain.Transfer),
+		incomingTransferSession:        make(map[string]*incomingTransferSession),
 	}
 }
 
@@ -199,7 +289,7 @@ func (s *RuntimeService) Bootstrap() (BootstrapSnapshot, error) {
 		Pairings:        mapPairingSnapshots(s.pairings.ListPairings()),
 		Conversations:   conversationSnapshots,
 		Messages:        messageSnapshots,
-		Transfers:       mapTransferSnapshots(transfers),
+		Transfers:       s.mapTransferSnapshots(transfers),
 	}, nil
 }
 
@@ -229,6 +319,7 @@ func (s *RuntimeService) StartPairing(ctx context.Context, peerDeviceID string) 
 		InitiatorDeviceName:  localDevice.DeviceName,
 		InitiatorFingerprint: security.BuildPinnedPeer(localDevice.DeviceID, localDevice.PublicKeyPEM).Fingerprint,
 		InitiatorNonce:       initiatorNonce,
+		AgentTCPPort:         s.cfg.AgentTCPPort,
 	}
 
 	response, err := s.transport.StartPairing(ctx, peer, request)
@@ -287,6 +378,7 @@ func (s *RuntimeService) ConfirmPairing(ctx context.Context, pairingID string) (
 		ConfirmerDeviceID:    localDevice.DeviceID,
 		ConfirmerFingerprint: security.BuildPinnedPeer(localDevice.DeviceID, localDevice.PublicKeyPEM).Fingerprint,
 		Confirmed:            true,
+		AgentTCPPort:         s.cfg.AgentTCPPort,
 	})
 	if err != nil {
 		s.updatePeerReachability(peer.DeviceID, false)
@@ -358,6 +450,7 @@ func (s *RuntimeService) SendTextMessage(ctx context.Context, peerDeviceID strin
 		SenderDeviceID:   localDevice.DeviceID,
 		Body:             body,
 		CreatedAtRFC3339: message.CreatedAt.Format(time.RFC3339Nano),
+		AgentTCPPort:     s.cfg.AgentTCPPort,
 	})
 	if err != nil {
 		s.updatePeerReachability(peer.DeviceID, false)
@@ -418,52 +511,137 @@ func (s *RuntimeService) SendFile(
 	message.Kind = "file"
 
 	transferRecord := domain.Transfer{
-		TransferID: newRandomID("transfer"),
-		MessageID:  message.MessageID,
-		FileName:   filepath.Base(fileName),
-		FileSize:   fileSize,
-		State:      "sending",
-		CreatedAt:  message.CreatedAt,
-	}
-
-	response, err := s.transport.SendFile(ctx, peer, protocol.FileTransferRequest{
-		TransferID:       transferRecord.TransferID,
+		TransferID:       newRandomID("transfer"),
 		MessageID:        message.MessageID,
-		SenderDeviceID:   localDevice.DeviceID,
-		FileName:         transferRecord.FileName,
+		FileName:         filepath.Base(fileName),
 		FileSize:         fileSize,
-		CreatedAtRFC3339: message.CreatedAt.Format(time.RFC3339Nano),
-	}, content)
-	if err != nil {
-		s.updatePeerReachability(peer.DeviceID, false)
-		return TransferSnapshot{}, fmt.Errorf("send file: %w", err)
+		State:            transfer.StateSending,
+		Direction:        "outgoing",
+		BytesTransferred: 0,
+		CreatedAt:        message.CreatedAt,
 	}
-	s.updatePeerReachability(peer.DeviceID, true)
 
-	if response.TransferID != "" {
-		transferRecord.TransferID = response.TransferID
-	}
-	if response.State != "" {
-		transferRecord.State = response.State
-	} else {
-		transferRecord.State = "done"
-	}
-	message.Status = "sent"
-
-	if err := s.store.SaveMessage(message); err != nil {
-		return TransferSnapshot{}, fmt.Errorf("save outgoing file message: %w", err)
-	}
-	if err := s.store.SaveTransfer(transferRecord); err != nil {
-		return TransferSnapshot{}, fmt.Errorf("save outgoing transfer: %w", err)
+	if err := s.store.SaveMessageWithTransfer(message, transferRecord); err != nil {
+		return TransferSnapshot{}, fmt.Errorf("save outgoing file payload: %w", err)
 	}
 
 	s.publishMessageEvent(message)
 	s.publishTransferEvent(transferRecord)
-	return toTransferSnapshot(transferRecord), nil
+
+	telemetry := s.transfers.Start(
+		transferRecord.TransferID,
+		transferRecord.FileSize,
+		transferRecord.Direction,
+		time.Now().UTC(),
+	)
+	progressGate := transfer.NewProgressEventGate(transferEventMinInterval, transferEventMinBytes)
+	progressMu := sync.Mutex{}
+	progressWarm := false
+	advanceProgress := func(delta int64) {
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		now := time.Now().UTC()
+		transferRecord.BytesTransferred += delta
+		telemetry.Advance(delta, now)
+		if shouldPublishThrottledTransferProgress(
+			progressGate,
+			&progressWarm,
+			transferRecord,
+			telemetry.Snapshot(now),
+			delta,
+			now,
+		) {
+			s.publishTransferEvent(transferRecord)
+		}
+	}
+
+	var (
+		finalState string
+		sendErr    error
+	)
+	if sessionTransport, ok := s.transport.(transfer.SessionTransport); ok && fileSize >= multipartThreshold {
+		var completeResponse protocol.TransferSessionCompleteResponse
+		completeResponse, sendErr = transfer.NewSessionSender(
+			sessionTransport,
+			peer,
+			nil,
+			advanceProgress,
+		).Send(ctx, content, transfer.SessionMeta{
+			TransferID:     transferRecord.TransferID,
+			MessageID:      message.MessageID,
+			SenderDeviceID: localDevice.DeviceID,
+			FileName:       transferRecord.FileName,
+			FileSize:       fileSize,
+			AgentTCPPort:   s.cfg.AgentTCPPort,
+		})
+		if completeResponse.State != "" {
+			finalState = completeResponse.State
+		}
+	} else {
+		progressReader := transfer.NewProgressReader(content, advanceProgress)
+		var response protocol.FileTransferResponse
+		response, sendErr = s.transport.SendFile(ctx, peer, protocol.FileTransferRequest{
+			TransferID:       transferRecord.TransferID,
+			MessageID:        message.MessageID,
+			SenderDeviceID:   localDevice.DeviceID,
+			FileName:         transferRecord.FileName,
+			FileSize:         fileSize,
+			CreatedAtRFC3339: message.CreatedAt.Format(time.RFC3339Nano),
+			AgentTCPPort:     s.cfg.AgentTCPPort,
+		}, progressReader)
+		if response.State != "" {
+			finalState = response.State
+		}
+	}
+	if sendErr != nil {
+		if progressGate.Finish(time.Now().UTC()) {
+			s.publishTransferEvent(transferRecord)
+		}
+		s.updatePeerReachability(peer.DeviceID, false)
+		transferRecord.State = transfer.StateFailed
+		message.Status = "failed"
+		if saveErr := s.store.PersistTransferOutcome(&message, transferRecord); saveErr == nil {
+			s.clearTransferOverride(transferRecord.TransferID)
+			s.publishMessageEvent(message)
+		} else {
+			s.rememberTransferOverride(transferRecord)
+		}
+		s.transfers.Finish(transferRecord.TransferID)
+		s.publishTransferEvent(transferRecord)
+		return TransferSnapshot{}, fmt.Errorf("send file: %w", sendErr)
+	}
+	s.updatePeerReachability(peer.DeviceID, true)
+	if progressGate.Finish(time.Now().UTC()) {
+		s.publishTransferEvent(transferRecord)
+	}
+
+	if finalState != "" {
+		transferRecord.State = finalState
+	} else {
+		transferRecord.State = transfer.StateDone
+	}
+	transferRecord.BytesTransferred = transferRecord.FileSize
+	if transferRecord.State == transfer.StateDone {
+		message.Status = "sent"
+	} else {
+		message.Status = "failed"
+	}
+	if err := s.store.PersistTransferOutcome(&message, transferRecord); err != nil {
+		s.rememberTransferOverride(transferRecord)
+		s.transfers.Finish(transferRecord.TransferID)
+		s.publishTransferEvent(transferRecord)
+		return s.toTransferSnapshot(transferRecord), nil
+	}
+
+	s.clearTransferOverride(transferRecord.TransferID)
+	s.transfers.Finish(transferRecord.TransferID)
+	s.publishMessageEvent(message)
+	s.publishTransferEvent(transferRecord)
+	return s.toTransferSnapshot(transferRecord), nil
 }
 
 func (s *RuntimeService) AcceptIncomingPairing(
-	_ context.Context,
+	ctx context.Context,
 	request protocol.PairingStartRequest,
 ) (protocol.PairingStartResponse, error) {
 	localDevice, ok, err := s.store.LoadLocalDevice()
@@ -485,8 +663,8 @@ func (s *RuntimeService) AcceptIncomingPairing(
 		Initiator:         false,
 	})
 
+	s.markPeerDirectActive(ctx, pairing.PeerDeviceID, request.AgentTCPPort)
 	s.publishPairingEvent(pairing)
-	s.publishPeerEvent(pairing.PeerDeviceID)
 
 	return protocol.PairingStartResponse{
 		PairingID:            pairing.PairingID,
@@ -531,7 +709,7 @@ func (s *RuntimeService) AuthorizePairingConfirm(
 }
 
 func (s *RuntimeService) AcceptPairingConfirm(
-	_ context.Context,
+	ctx context.Context,
 	request protocol.PairingConfirmRequest,
 ) (protocol.PairingConfirmResponse, error) {
 	if !request.Confirmed {
@@ -559,8 +737,8 @@ func (s *RuntimeService) AcceptPairingConfirm(
 		}
 	}
 
+	s.markPeerDirectActive(ctx, updated.PeerDeviceID, request.AgentTCPPort)
 	s.publishPairingEvent(updated)
-	s.publishPeerEvent(updated.PeerDeviceID)
 
 	return protocol.PairingConfirmResponse{
 		PairingID:       updated.PairingID,
@@ -569,13 +747,44 @@ func (s *RuntimeService) AcceptPairingConfirm(
 	}, nil
 }
 
-func (s *RuntimeService) AcceptIncomingTextMessage(
+func (s *RuntimeService) AcceptHeartbeat(
+	ctx context.Context,
+	request protocol.HeartbeatRequest,
+) (protocol.HeartbeatResponse, error) {
+	localDevice, ok, err := s.store.LoadLocalDevice()
+	if err != nil {
+		return protocol.HeartbeatResponse{}, fmt.Errorf("load local device: %w", err)
+	}
+	if !ok {
+		return protocol.HeartbeatResponse{}, fmt.Errorf("local device not initialized")
+	}
+
+	s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
+	return protocol.HeartbeatResponse{
+		ResponderDeviceID:   localDevice.DeviceID,
+		ResponderDeviceName: localDevice.DeviceName,
+		AgentTCPPort:        s.cfg.AgentTCPPort,
+		ReceivedAtRFC3339:   time.Now().UTC().Format(time.RFC3339Nano),
+	}, nil
+}
+
+func (s *RuntimeService) AuthorizeHeartbeat(
 	_ context.Context,
+	request protocol.HeartbeatRequest,
+	caller protocol.PeerCaller,
+) error {
+	return s.authorizeTrustedPeerRequest(request.SenderDeviceID, caller)
+}
+
+func (s *RuntimeService) AcceptIncomingTextMessage(
+	ctx context.Context,
 	request protocol.TextMessageRequest,
 ) (protocol.AckResponse, error) {
 	if !s.isTrustedPeer(request.SenderDeviceID) {
 		return protocol.AckResponse{}, fmt.Errorf("peer %s is not trusted", request.SenderDeviceID)
 	}
+
+	s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
 
 	conversation, err := s.store.EnsureConversation(request.SenderDeviceID)
 	if err != nil {
@@ -600,6 +809,7 @@ func (s *RuntimeService) AcceptIncomingTextMessage(
 		return protocol.AckResponse{}, fmt.Errorf("save incoming message: %w", err)
 	}
 
+	s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
 	s.publishMessageEvent(message)
 	return protocol.AckResponse{
 		RequestID: request.MessageID,
@@ -616,13 +826,15 @@ func (s *RuntimeService) AuthorizeTextMessage(
 }
 
 func (s *RuntimeService) AcceptIncomingFileTransfer(
-	_ context.Context,
+	ctx context.Context,
 	request protocol.FileTransferRequest,
 	content io.Reader,
 ) (protocol.FileTransferResponse, error) {
 	if !s.isTrustedPeer(request.SenderDeviceID) {
 		return protocol.FileTransferResponse{}, fmt.Errorf("peer %s is not trusted", request.SenderDeviceID)
 	}
+
+	s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
 
 	conversation, err := s.store.EnsureConversation(request.SenderDeviceID)
 	if err != nil {
@@ -644,19 +856,6 @@ func (s *RuntimeService) AcceptIncomingFileTransfer(
 	}
 	defer fileWriter.Cleanup()
 
-	written, err := io.Copy(fileWriter, content)
-	if err != nil {
-		return protocol.FileTransferResponse{}, fmt.Errorf("write incoming file: %w", err)
-	}
-	if written != request.FileSize {
-		return protocol.FileTransferResponse{}, fmt.Errorf("incoming file size mismatch: declared=%d actual=%d", request.FileSize, written)
-	}
-
-	finalPath, err := fileWriter.Commit()
-	if err != nil {
-		return protocol.FileTransferResponse{}, fmt.Errorf("commit incoming file: %w", err)
-	}
-
 	messageID := request.MessageID
 	if messageID == "" {
 		messageID = newRandomID("msg")
@@ -671,31 +870,355 @@ func (s *RuntimeService) AcceptIncomingFileTransfer(
 		ConversationID: conversation.ConversationID,
 		Direction:      "incoming",
 		Kind:           "file",
-		Body:           filepath.Base(finalPath),
+		Body:           filepath.Base(request.FileName),
 		Status:         "sent",
 		CreatedAt:      createdAt,
 	}
 	transferRecord := domain.Transfer{
-		TransferID: transferID,
-		MessageID:  messageID,
-		FileName:   filepath.Base(finalPath),
-		FileSize:   written,
-		State:      "done",
-		CreatedAt:  createdAt,
+		TransferID:       transferID,
+		MessageID:        messageID,
+		FileName:         filepath.Base(request.FileName),
+		FileSize:         request.FileSize,
+		State:            transfer.StateReceiving,
+		Direction:        "incoming",
+		BytesTransferred: 0,
+		CreatedAt:        createdAt,
 	}
 
-	if err := s.store.SaveMessage(message); err != nil {
-		return protocol.FileTransferResponse{}, fmt.Errorf("save incoming file message: %w", err)
-	}
-	if err := s.store.SaveTransfer(transferRecord); err != nil {
-		return protocol.FileTransferResponse{}, fmt.Errorf("save incoming transfer: %w", err)
+	if err := s.store.SaveMessageWithTransfer(message, transferRecord); err != nil {
+		return protocol.FileTransferResponse{}, fmt.Errorf("save incoming file payload: %w", err)
 	}
 
 	s.publishMessageEvent(message)
 	s.publishTransferEvent(transferRecord)
+
+	telemetry := s.transfers.Start(
+		transferRecord.TransferID,
+		transferRecord.FileSize,
+		transferRecord.Direction,
+		time.Now().UTC(),
+	)
+	progressGate := transfer.NewProgressEventGate(transferEventMinInterval, transferEventMinBytes)
+	progressWarm := false
+	progressWriter := transfer.NewProgressWriter(fileWriter, func(delta int64) {
+		now := time.Now().UTC()
+		transferRecord.BytesTransferred += delta
+		telemetry.Advance(delta, now)
+		if shouldPublishThrottledTransferProgress(
+			progressGate,
+			&progressWarm,
+			transferRecord,
+			telemetry.Snapshot(now),
+			delta,
+			now,
+		) {
+			s.publishTransferEvent(transferRecord)
+		}
+	})
+
+	written, err := io.CopyBuffer(progressWriter, readerOnly{Reader: content}, make([]byte, transferCopyBufferSize))
+	if err != nil {
+		if progressGate.Finish(time.Now().UTC()) {
+			s.publishTransferEvent(transferRecord)
+		}
+		transferRecord.State = transfer.StateFailed
+		transferRecord.BytesTransferred = written
+		if persistErr := s.store.PersistTransferOutcome(nil, transferRecord); persistErr == nil {
+			s.clearTransferOverride(transferRecord.TransferID)
+		} else {
+			s.rememberTransferOverride(transferRecord)
+		}
+		s.transfers.Finish(transferRecord.TransferID)
+		s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
+		s.publishTransferEvent(transferRecord)
+		return protocol.FileTransferResponse{}, fmt.Errorf("write incoming file: %w", err)
+	}
+	if written != request.FileSize {
+		if progressGate.Finish(time.Now().UTC()) {
+			s.publishTransferEvent(transferRecord)
+		}
+		transferRecord.State = transfer.StateFailed
+		transferRecord.BytesTransferred = written
+		if persistErr := s.store.PersistTransferOutcome(nil, transferRecord); persistErr == nil {
+			s.clearTransferOverride(transferRecord.TransferID)
+		} else {
+			s.rememberTransferOverride(transferRecord)
+		}
+		s.transfers.Finish(transferRecord.TransferID)
+		s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
+		s.publishTransferEvent(transferRecord)
+		return protocol.FileTransferResponse{}, fmt.Errorf("incoming file size mismatch: declared=%d actual=%d", request.FileSize, written)
+	}
+
+	if _, err := fileWriter.Commit(); err != nil {
+		if progressGate.Finish(time.Now().UTC()) {
+			s.publishTransferEvent(transferRecord)
+		}
+		transferRecord.State = transfer.StateFailed
+		transferRecord.BytesTransferred = written
+		if persistErr := s.store.PersistTransferOutcome(nil, transferRecord); persistErr == nil {
+			s.clearTransferOverride(transferRecord.TransferID)
+		} else {
+			s.rememberTransferOverride(transferRecord)
+		}
+		s.transfers.Finish(transferRecord.TransferID)
+		s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
+		s.publishTransferEvent(transferRecord)
+		return protocol.FileTransferResponse{}, fmt.Errorf("commit incoming file: %w", err)
+	}
+
+	if progressGate.Finish(time.Now().UTC()) {
+		s.publishTransferEvent(transferRecord)
+	}
+	transferRecord.State = transfer.StateDone
+	transferRecord.FileSize = written
+	transferRecord.BytesTransferred = written
+	if err := s.store.PersistTransferOutcome(nil, transferRecord); err != nil {
+		s.rememberTransferOverride(transferRecord)
+		s.transfers.Finish(transferRecord.TransferID)
+		s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
+		s.publishTransferEvent(transferRecord)
+		return protocol.FileTransferResponse{
+			TransferID: transferID,
+			State:      transferRecord.State,
+		}, nil
+	}
+
+	s.clearTransferOverride(transferRecord.TransferID)
+	s.transfers.Finish(transferRecord.TransferID)
+	s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
+	s.publishTransferEvent(transferRecord)
 	return protocol.FileTransferResponse{
 		TransferID: transferID,
 		State:      transferRecord.State,
+	}, nil
+}
+
+func (s *RuntimeService) StartIncomingTransferSession(
+	ctx context.Context,
+	request protocol.TransferSessionStartRequest,
+) (protocol.TransferSessionStartResponse, error) {
+	if strings.TrimSpace(request.SenderDeviceID) == "" {
+		return protocol.TransferSessionStartResponse{}, fmt.Errorf("senderDeviceID is required")
+	}
+
+	s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
+
+	if request.FileSize <= 0 {
+		return protocol.TransferSessionStartResponse{}, fmt.Errorf("invalid file size: %d", request.FileSize)
+	}
+
+	conversation, err := s.store.EnsureConversation(request.SenderDeviceID)
+	if err != nil {
+		return protocol.TransferSessionStartResponse{}, fmt.Errorf("ensure conversation: %w", err)
+	}
+
+	receiver, err := transfer.NewSessionReceiver(s.cfg.DefaultDownloadDir, request.FileName, request.FileSize)
+	if err != nil {
+		return protocol.TransferSessionStartResponse{}, fmt.Errorf("create session receiver: %w", err)
+	}
+
+	messageID := request.MessageID
+	if strings.TrimSpace(messageID) == "" {
+		messageID = newRandomID("msg")
+	}
+	transferID := request.TransferID
+	if strings.TrimSpace(transferID) == "" {
+		transferID = newRandomID("transfer")
+	}
+	createdAt := time.Now().UTC()
+
+	message := domain.Message{
+		MessageID:      messageID,
+		ConversationID: conversation.ConversationID,
+		Direction:      "incoming",
+		Kind:           "file",
+		Body:           filepath.Base(request.FileName),
+		Status:         "sent",
+		CreatedAt:      createdAt,
+	}
+	transferRecord := domain.Transfer{
+		TransferID:       transferID,
+		MessageID:        messageID,
+		FileName:         filepath.Base(request.FileName),
+		FileSize:         request.FileSize,
+		State:            transfer.StateReceiving,
+		Direction:        "incoming",
+		BytesTransferred: 0,
+		CreatedAt:        createdAt,
+	}
+
+	if err := s.store.SaveMessageWithTransfer(message, transferRecord); err != nil {
+		_ = receiver.Cleanup()
+		return protocol.TransferSessionStartResponse{}, fmt.Errorf("save incoming session payload: %w", err)
+	}
+
+	s.publishMessageEvent(message)
+	s.publishTransferEvent(transferRecord)
+
+	sessionID := newRandomID("session")
+	sessionState := &incomingTransferSession{
+		senderDeviceID:        request.SenderDeviceID,
+		agentTCPPort:          request.AgentTCPPort,
+		adaptivePolicyVersion: transfer.SessionAdaptivePolicyVersion,
+		transferRecord:        transferRecord,
+		receiver:              receiver,
+		telemetry: s.transfers.Start(
+			transferRecord.TransferID,
+			transferRecord.FileSize,
+			transferRecord.Direction,
+			time.Now().UTC(),
+		),
+		progressGate: transfer.NewProgressEventGate(transferEventMinInterval, transferEventMinBytes),
+		idleTimeout:  s.incomingTransferSessionTimeout,
+	}
+	sessionState.idleTimer = time.AfterFunc(sessionState.idleTimeout, func() {
+		s.expireIncomingTransferSession(sessionID)
+	})
+	s.sessionMu.Lock()
+	s.incomingTransferSession[sessionID] = sessionState
+	s.sessionMu.Unlock()
+
+	chunkSize, initialParallelism, maxParallelism := transfer.RecommendedSessionProfile(request.FileSize)
+	return protocol.TransferSessionStartResponse{
+		SessionID:             sessionID,
+		ChunkSize:             chunkSize,
+		InitialParallelism:    initialParallelism,
+		MaxParallelism:        maxParallelism,
+		AdaptivePolicyVersion: transfer.SessionAdaptivePolicyVersion,
+	}, nil
+}
+
+func (s *RuntimeService) AcceptIncomingTransferPart(
+	ctx context.Context,
+	request protocol.TransferPartRequest,
+	content io.Reader,
+) (protocol.TransferPartResponse, error) {
+	sessionState, ok := s.getIncomingTransferSession(request.SessionID)
+	if !ok {
+		return protocol.TransferPartResponse{}, fmt.Errorf("incoming transfer session not found")
+	}
+	if strings.TrimSpace(request.TransferID) != "" && request.TransferID != sessionState.transferRecord.TransferID {
+		return protocol.TransferPartResponse{}, fmt.Errorf("incoming transfer session transfer mismatch")
+	}
+	sessionState.mu.Lock()
+	if sessionState.closed {
+		sessionState.mu.Unlock()
+		return protocol.TransferPartResponse{}, fmt.Errorf("incoming transfer session already closed")
+	}
+	sessionState.activeParts++
+	sessionState.resetIdleTimerLocked()
+	sessionState.mu.Unlock()
+
+	written, err := sessionState.receiver.WritePart(request.PartIndex, request.Offset, request.Length, content)
+	if err != nil {
+		bytesReceived := int64(0)
+		sessionState.mu.Lock()
+		if sessionState.activeParts > 0 {
+			sessionState.activeParts--
+		}
+		bytesReceived = sessionState.receiver.BytesReceived()
+		sessionState.resetIdleTimerLocked()
+		sessionState.mu.Unlock()
+		if errors.Is(err, transfer.ErrPartAlreadyCompleted) {
+			return protocol.TransferPartResponse{
+				SessionID:     request.SessionID,
+				PartIndex:     request.PartIndex,
+				BytesWritten:  written,
+				BytesReceived: bytesReceived,
+			}, nil
+		}
+		if errors.Is(err, transfer.ErrPartAlreadyInProgress) {
+			return protocol.TransferPartResponse{}, fmt.Errorf("write transfer part: %w", err)
+		}
+		if s.beginIncomingTransferSessionFinalization(sessionState) {
+			failedSnapshot := s.finalizeIncomingTransferSessionFailure(request.SessionID, sessionState)
+			s.markPeerDirectActive(ctx, sessionState.senderDeviceID, sessionState.agentTCPPort)
+			s.publishTransferEvent(failedSnapshot)
+		}
+		return protocol.TransferPartResponse{}, fmt.Errorf("write transfer part: %w", err)
+	}
+
+	now := time.Now().UTC()
+	sessionState.mu.Lock()
+	if sessionState.activeParts > 0 {
+		sessionState.activeParts--
+	}
+	sessionState.telemetry.Advance(written, now)
+	sessionState.transferRecord.BytesTransferred = sessionState.receiver.BytesReceived()
+	sessionState.resetIdleTimerLocked()
+	snapshot := sessionState.transferRecord
+	shouldPublish := shouldPublishThrottledTransferProgress(
+		sessionState.progressGate,
+		&sessionState.progressWarm,
+		snapshot,
+		sessionState.telemetry.Snapshot(now),
+		written,
+		now,
+	)
+	sessionState.mu.Unlock()
+
+	if shouldPublish {
+		s.publishTransferEvent(snapshot)
+	}
+
+	return protocol.TransferPartResponse{
+		SessionID:     request.SessionID,
+		PartIndex:     request.PartIndex,
+		BytesWritten:  written,
+		BytesReceived: snapshot.BytesTransferred,
+	}, nil
+}
+
+func (s *RuntimeService) CompleteIncomingTransferSession(
+	ctx context.Context,
+	request protocol.TransferSessionCompleteRequest,
+) (protocol.TransferSessionCompleteResponse, error) {
+	sessionState, ok := s.getIncomingTransferSession(request.SessionID)
+	if !ok {
+		return protocol.TransferSessionCompleteResponse{}, fmt.Errorf("incoming transfer session not found")
+	}
+	if strings.TrimSpace(request.TransferID) != "" && request.TransferID != sessionState.transferRecord.TransferID {
+		return protocol.TransferSessionCompleteResponse{}, fmt.Errorf("incoming transfer session transfer mismatch")
+	}
+	if !s.beginIncomingTransferSessionFinalization(sessionState) {
+		return protocol.TransferSessionCompleteResponse{}, fmt.Errorf("incoming transfer session already closed")
+	}
+
+	if _, err := sessionState.receiver.Complete(request.PartCount, request.FileSHA256); err != nil {
+		failedSnapshot := s.finalizeIncomingTransferSessionFailure(request.SessionID, sessionState)
+		s.markPeerDirectActive(ctx, sessionState.senderDeviceID, sessionState.agentTCPPort)
+		s.publishTransferEvent(failedSnapshot)
+		return protocol.TransferSessionCompleteResponse{}, fmt.Errorf("complete incoming transfer session: %w", err)
+	}
+
+	sessionState.mu.Lock()
+	sessionState.transferRecord.State = transfer.StateDone
+	sessionState.transferRecord.FileSize = sessionState.receiver.BytesReceived()
+	sessionState.transferRecord.BytesTransferred = sessionState.receiver.BytesReceived()
+	completedSnapshot := sessionState.transferRecord
+	sessionState.mu.Unlock()
+
+	if err := s.store.PersistTransferOutcome(nil, completedSnapshot); err != nil {
+		s.rememberTransferOverride(completedSnapshot)
+		s.transfers.Finish(completedSnapshot.TransferID)
+		s.deleteIncomingTransferSession(request.SessionID)
+		s.markPeerDirectActive(ctx, sessionState.senderDeviceID, sessionState.agentTCPPort)
+		s.publishTransferEvent(completedSnapshot)
+		return protocol.TransferSessionCompleteResponse{
+			TransferID: completedSnapshot.TransferID,
+			State:      completedSnapshot.State,
+		}, nil
+	}
+
+	s.clearTransferOverride(completedSnapshot.TransferID)
+	s.transfers.Finish(completedSnapshot.TransferID)
+	s.deleteIncomingTransferSession(request.SessionID)
+	s.markPeerDirectActive(ctx, sessionState.senderDeviceID, sessionState.agentTCPPort)
+	s.publishTransferEvent(completedSnapshot)
+	return protocol.TransferSessionCompleteResponse{
+		TransferID: completedSnapshot.TransferID,
+		State:      completedSnapshot.State,
 	}, nil
 }
 
@@ -705,6 +1228,118 @@ func (s *RuntimeService) AuthorizeFileTransfer(
 	caller protocol.PeerCaller,
 ) error {
 	return s.authorizeTrustedPeerRequest(request.SenderDeviceID, caller)
+}
+
+func (s *RuntimeService) AuthorizeTransferSessionStart(
+	_ context.Context,
+	request protocol.TransferSessionStartRequest,
+	caller protocol.PeerCaller,
+) error {
+	return s.authorizeTrustedPeerRequest(request.SenderDeviceID, caller)
+}
+
+func (s *RuntimeService) AuthorizeTransferPart(
+	_ context.Context,
+	request protocol.TransferPartRequest,
+	caller protocol.PeerCaller,
+) error {
+	sessionState, ok := s.getIncomingTransferSession(request.SessionID)
+	if !ok {
+		return fmt.Errorf("%w: transfer session not found", protocol.ErrPeerForbidden)
+	}
+	if request.RawBody && !transfer.SessionPolicySupportsFastPath(sessionState.adaptivePolicyVersion) {
+		return fmt.Errorf("%w: raw transfer part not allowed for session", protocol.ErrPeerForbidden)
+	}
+	return s.authorizeTrustedPeerRequest(sessionState.senderDeviceID, caller)
+}
+
+func (s *RuntimeService) AuthorizeTransferSessionComplete(
+	_ context.Context,
+	request protocol.TransferSessionCompleteRequest,
+	caller protocol.PeerCaller,
+) error {
+	sessionState, ok := s.getIncomingTransferSession(request.SessionID)
+	if !ok {
+		return fmt.Errorf("%w: transfer session not found", protocol.ErrPeerForbidden)
+	}
+	return s.authorizeTrustedPeerRequest(sessionState.senderDeviceID, caller)
+}
+
+func (s *RuntimeService) getIncomingTransferSession(sessionID string) (*incomingTransferSession, bool) {
+	s.sessionMu.RLock()
+	defer s.sessionMu.RUnlock()
+	sessionState, ok := s.incomingTransferSession[sessionID]
+	return sessionState, ok
+}
+
+func (s *RuntimeService) deleteIncomingTransferSession(sessionID string) {
+	s.sessionMu.Lock()
+	sessionState := s.incomingTransferSession[sessionID]
+	delete(s.incomingTransferSession, sessionID)
+	s.sessionMu.Unlock()
+	if sessionState != nil && sessionState.idleTimer != nil {
+		sessionState.idleTimer.Stop()
+	}
+}
+
+func (s *RuntimeService) beginIncomingTransferSessionFinalization(sessionState *incomingTransferSession) bool {
+	sessionState.mu.Lock()
+	defer sessionState.mu.Unlock()
+
+	if sessionState.closed {
+		return false
+	}
+	sessionState.closed = true
+	if sessionState.idleTimer != nil {
+		sessionState.idleTimer.Stop()
+	}
+	return true
+}
+
+func (s *RuntimeService) finalizeIncomingTransferSessionFailure(
+	sessionID string,
+	sessionState *incomingTransferSession,
+) domain.Transfer {
+	sessionState.mu.Lock()
+	sessionState.transferRecord.State = transfer.StateFailed
+	sessionState.transferRecord.BytesTransferred = sessionState.receiver.BytesReceived()
+	failedSnapshot := sessionState.transferRecord
+	sessionState.mu.Unlock()
+
+	_ = sessionState.receiver.Cleanup()
+	if persistErr := s.store.PersistTransferOutcome(nil, failedSnapshot); persistErr == nil {
+		s.clearTransferOverride(failedSnapshot.TransferID)
+	} else {
+		s.rememberTransferOverride(failedSnapshot)
+	}
+	s.transfers.Finish(failedSnapshot.TransferID)
+	s.deleteIncomingTransferSession(sessionID)
+	return failedSnapshot
+}
+
+func (s *RuntimeService) expireIncomingTransferSession(sessionID string) {
+	sessionState, ok := s.getIncomingTransferSession(sessionID)
+	if !ok {
+		return
+	}
+
+	sessionState.mu.Lock()
+	if sessionState.closed {
+		sessionState.mu.Unlock()
+		return
+	}
+	if sessionState.activeParts > 0 {
+		sessionState.resetIdleTimerLocked()
+		sessionState.mu.Unlock()
+		return
+	}
+	sessionState.mu.Unlock()
+
+	if !s.beginIncomingTransferSessionFinalization(sessionState) {
+		return
+	}
+	failedSnapshot := s.finalizeIncomingTransferSessionFailure(sessionID, sessionState)
+	s.publishTransferEvent(failedSnapshot)
 }
 
 func mergePeerSnapshots(trustedPeers []domain.Peer, discoveredPeers []discovery.PeerRecord) []PeerSnapshot {
@@ -789,10 +1424,10 @@ func mapConversationSnapshots(conversations []domain.Conversation, peers []PeerS
 	return snapshots
 }
 
-func mapTransferSnapshots(transfers []domain.Transfer) []TransferSnapshot {
+func (s *RuntimeService) mapTransferSnapshots(transfers []domain.Transfer) []TransferSnapshot {
 	snapshots := make([]TransferSnapshot, 0, len(transfers))
 	for _, transfer := range transfers {
-		snapshots = append(snapshots, toTransferSnapshot(transfer))
+		snapshots = append(snapshots, s.toTransferSnapshot(transfer))
 	}
 	return snapshots
 }
@@ -833,14 +1468,26 @@ func toMessageSnapshot(message domain.Message) MessageSnapshot {
 	}
 }
 
-func toTransferSnapshot(transfer domain.Transfer) TransferSnapshot {
+func (s *RuntimeService) toTransferSnapshot(transferRecord domain.Transfer) TransferSnapshot {
+	transferRecord = s.mergeTransferTelemetry(transferRecord)
+	return toTransferSnapshot(transferRecord)
+}
+
+func toTransferSnapshot(transferRecord domain.Transfer) TransferSnapshot {
+	transferRecord = normalizeTransferRecord(transferRecord)
 	return TransferSnapshot{
-		TransferID: transfer.TransferID,
-		MessageID:  transfer.MessageID,
-		FileName:   transfer.FileName,
-		FileSize:   transfer.FileSize,
-		State:      transfer.State,
-		CreatedAt:  transfer.CreatedAt.Format(time.RFC3339Nano),
+		TransferID:       transferRecord.TransferID,
+		MessageID:        transferRecord.MessageID,
+		FileName:         transferRecord.FileName,
+		FileSize:         transferRecord.FileSize,
+		State:            transferRecord.State,
+		Direction:        transferRecord.Direction,
+		BytesTransferred: transferRecord.BytesTransferred,
+		ProgressPercent:  transferRecord.ProgressPercent,
+		RateBytesPerSec:  transferRecord.RateBytesPerSec,
+		EtaSeconds:       transferRecord.EtaSeconds,
+		Active:           transferRecord.Active,
+		CreatedAt:        transferRecord.CreatedAt.Format(time.RFC3339Nano),
 	}
 }
 
@@ -889,15 +1536,259 @@ func (s *RuntimeService) publishTransferEvent(transfer domain.Transfer) {
 	if s.events == nil {
 		return
 	}
-	s.events.Publish("transfer.updated", toTransferSnapshot(transfer))
+	s.events.Publish("transfer.updated", s.toTransferSnapshot(transfer))
+}
+
+func (s *RuntimeService) RunHeartbeatLoop(ctx context.Context) {
+	if s.transport == nil || s.store == nil || s.discovery == nil {
+		<-ctx.Done()
+		return
+	}
+
+	s.runHeartbeatSweep(ctx)
+
+	ticker := time.NewTicker(s.heartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.runHeartbeatSweep(ctx)
+		}
+	}
+}
+
+func (s *RuntimeService) runHeartbeatSweep(ctx context.Context) {
+	localDevice, ok, err := s.store.LoadLocalDevice()
+	if err != nil || !ok {
+		return
+	}
+
+	discoveredPeers := make(map[string]discovery.PeerRecord)
+	for _, peer := range s.discovery.List() {
+		discoveredPeers[peer.DeviceID] = peer
+	}
+
+	trustedPeers, err := s.store.ListTrustedPeers()
+	if err != nil {
+		return
+	}
+
+	for _, trustedPeer := range trustedPeers {
+		if !trustedPeer.Trusted {
+			continue
+		}
+
+		peer, ok := discoveredPeers[trustedPeer.DeviceID]
+		if !ok || strings.TrimSpace(peer.LastKnownAddr) == "" {
+			continue
+		}
+		peer.PinnedFingerprint = trustedPeer.PinnedFingerprint
+
+		probeCtx := ctx
+		cancel := func() {}
+		if s.heartbeatTimeout > 0 {
+			probeCtx, cancel = context.WithTimeout(ctx, s.heartbeatTimeout)
+		}
+		response, err := s.transport.SendHeartbeat(probeCtx, peer, protocol.HeartbeatRequest{
+			SenderDeviceID: localDevice.DeviceID,
+			SentAtRFC3339:  time.Now().UTC().Format(time.RFC3339Nano),
+			AgentTCPPort:   s.cfg.AgentTCPPort,
+		})
+		cancel()
+		if err != nil {
+			if s.recordHeartbeatFailure(trustedPeer.DeviceID) >= s.heartbeatFailureThreshold {
+				s.updatePeerReachability(trustedPeer.DeviceID, false)
+			}
+			continue
+		}
+
+		s.resetHeartbeatFailure(trustedPeer.DeviceID)
+		s.markPeerDirectActiveAt(
+			trustedPeer.DeviceID,
+			heartbeatPeerAddr(peer.LastKnownAddr, response.AgentTCPPort),
+			response.AgentTCPPort,
+			time.Now().UTC(),
+		)
+	}
 }
 
 func (s *RuntimeService) updatePeerReachability(deviceID string, reachable bool) {
 	if s.discovery == nil || strings.TrimSpace(deviceID) == "" {
 		return
 	}
-	s.discovery.MarkReachable(deviceID, reachable)
-	s.publishPeerEvent(deviceID)
+
+	observedAt := time.Now().UTC()
+	before, _ := s.discovery.Snapshot(deviceID, observedAt)
+	if reachable {
+		s.resetHeartbeatFailure(deviceID)
+		s.discovery.MarkDirectActive(deviceID, "", 0, observedAt)
+	} else {
+		s.discovery.MarkReachable(deviceID, false)
+	}
+	if after, ok := s.discovery.Snapshot(deviceID, observedAt); ok && shouldPublishPeerUpdate(before, after) {
+		s.publishPeerEvent(deviceID)
+	}
+}
+
+func (s *RuntimeService) markPeerDirectActive(ctx context.Context, deviceID string, agentTCPPort int) {
+	if s.discovery == nil || strings.TrimSpace(deviceID) == "" {
+		return
+	}
+
+	addr := strings.TrimSpace(directPeerAddrFromContext(ctx, agentTCPPort))
+	if addr == "" {
+		if _, ok := s.discovery.Get(deviceID); !ok {
+			return
+		}
+	}
+
+	observedAt := time.Now().UTC()
+	before, _ := s.discovery.Snapshot(deviceID, observedAt)
+	s.resetHeartbeatFailure(deviceID)
+	s.discovery.MarkDirectActive(
+		deviceID,
+		addr,
+		agentTCPPort,
+		observedAt,
+	)
+	if after, ok := s.discovery.Snapshot(deviceID, observedAt); ok && shouldPublishPeerUpdate(before, after) {
+		s.publishPeerEvent(deviceID)
+	}
+}
+
+func (s *RuntimeService) markPeerDirectActiveAt(deviceID string, addr string, agentTCPPort int, seenAt time.Time) {
+	if s.discovery == nil || strings.TrimSpace(deviceID) == "" {
+		return
+	}
+
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		if _, ok := s.discovery.Get(deviceID); !ok {
+			return
+		}
+	}
+
+	observedAt := seenAt.UTC()
+	before, _ := s.discovery.Snapshot(deviceID, observedAt)
+	s.resetHeartbeatFailure(deviceID)
+	s.discovery.MarkDirectActive(deviceID, addr, agentTCPPort, observedAt)
+	if after, ok := s.discovery.Snapshot(deviceID, observedAt); ok && shouldPublishPeerUpdate(before, after) {
+		s.publishPeerEvent(deviceID)
+	}
+}
+
+func (s *RuntimeService) recordHeartbeatFailure(deviceID string) int {
+	s.heartbeatMu.Lock()
+	defer s.heartbeatMu.Unlock()
+
+	s.heartbeatFailures[deviceID]++
+	return s.heartbeatFailures[deviceID]
+}
+
+func (s *RuntimeService) resetHeartbeatFailure(deviceID string) {
+	s.heartbeatMu.Lock()
+	defer s.heartbeatMu.Unlock()
+
+	delete(s.heartbeatFailures, deviceID)
+}
+
+func (s *RuntimeService) mergeTransferTelemetry(transferRecord domain.Transfer) domain.Transfer {
+	if s.transfers == nil {
+		return s.mergeTransferOverride(normalizeTransferRecord(transferRecord))
+	}
+
+	snapshot, ok := s.transfers.Snapshot(transferRecord.TransferID, time.Now().UTC())
+	if !ok {
+		return s.mergeTransferOverride(normalizeTransferRecord(transferRecord))
+	}
+
+	transferRecord.BytesTransferred = snapshot.BytesTransferred
+	transferRecord.ProgressPercent = snapshot.ProgressPercent
+	transferRecord.RateBytesPerSec = snapshot.RateBytesPerSec
+	transferRecord.EtaSeconds = snapshot.EtaSeconds
+	transferRecord.Active = true
+	return s.mergeTransferOverride(normalizeTransferRecord(transferRecord))
+}
+
+func normalizeTransferRecord(transferRecord domain.Transfer) domain.Transfer {
+	if strings.TrimSpace(transferRecord.Direction) == "" {
+		transferRecord.Direction = "outgoing"
+	}
+
+	if transferRecord.State == transfer.StateDone && transferRecord.FileSize > 0 && transferRecord.BytesTransferred == 0 {
+		transferRecord.BytesTransferred = transferRecord.FileSize
+	}
+	if transferRecord.BytesTransferred < 0 {
+		transferRecord.BytesTransferred = 0
+	}
+
+	if transferRecord.ProgressPercent <= 0 {
+		switch {
+		case transferRecord.FileSize > 0:
+			transferRecord.ProgressPercent = (float64(transferRecord.BytesTransferred) / float64(transferRecord.FileSize)) * 100
+		case transferRecord.State == transfer.StateDone:
+			transferRecord.ProgressPercent = 100
+		}
+	}
+	if transferRecord.ProgressPercent > 100 {
+		transferRecord.ProgressPercent = 100
+	}
+
+	if transferRecord.State == transfer.StateDone {
+		transferRecord.Active = false
+		transferRecord.RateBytesPerSec = 0
+		transferRecord.EtaSeconds = nil
+	}
+	if transferRecord.State == transfer.StateFailed {
+		transferRecord.Active = false
+		transferRecord.EtaSeconds = nil
+	}
+
+	return transferRecord
+}
+
+func shouldPublishPeerUpdate(before discovery.PeerRecord, after discovery.PeerRecord) bool {
+	return before.Online != after.Online ||
+		before.Reachable != after.Reachable ||
+		before.AgentTCPPort != after.AgentTCPPort ||
+		before.LastKnownAddr != after.LastKnownAddr
+}
+
+func shouldPublishThrottledTransferProgress(
+	progressGate *transfer.ProgressEventGate,
+	progressWarm *bool,
+	transferRecord domain.Transfer,
+	telemetrySnapshot transfer.Snapshot,
+	delta int64,
+	now time.Time,
+) bool {
+	meaningfulIntermediate := hasMeaningfulIntermediateTransferTelemetry(transferRecord, telemetrySnapshot)
+	if progressGate.Allow(delta, now) {
+		if meaningfulIntermediate {
+			*progressWarm = true
+			return true
+		}
+		return transferRecord.FileSize <= 0 || transferRecord.BytesTransferred >= transferRecord.FileSize
+	}
+	if meaningfulIntermediate && !*progressWarm {
+		*progressWarm = true
+		return true
+	}
+	return false
+}
+
+func hasMeaningfulIntermediateTransferTelemetry(
+	transferRecord domain.Transfer,
+	telemetrySnapshot transfer.Snapshot,
+) bool {
+	return transferRecord.FileSize > 0 &&
+		transferRecord.BytesTransferred > 0 &&
+		transferRecord.BytesTransferred < transferRecord.FileSize &&
+		telemetrySnapshot.RateBytesPerSec > 0 &&
+		telemetrySnapshot.EtaSeconds != nil
 }
 
 func newRandomID(prefix string) string {
@@ -906,6 +1797,63 @@ func newRandomID(prefix string) string {
 		return prefix + "-fallback"
 	}
 	return prefix + "-" + hex.EncodeToString(buffer)
+}
+
+func directPeerAddrFromContext(ctx context.Context, agentTCPPort int) string {
+	if agentTCPPort <= 0 {
+		return ""
+	}
+	caller, ok := protocol.CallerFromContext(ctx)
+	if !ok || strings.TrimSpace(caller.RemoteAddr) == "" {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(caller.RemoteAddr))
+	if err != nil || strings.TrimSpace(host) == "" {
+		return ""
+	}
+	return net.JoinHostPort(host, strconv.Itoa(agentTCPPort))
+}
+
+func heartbeatPeerAddr(lastKnownAddr string, agentTCPPort int) string {
+	lastKnownAddr = strings.TrimSpace(lastKnownAddr)
+	if lastKnownAddr == "" || agentTCPPort <= 0 {
+		return lastKnownAddr
+	}
+
+	host, _, err := net.SplitHostPort(lastKnownAddr)
+	if err != nil || strings.TrimSpace(host) == "" {
+		return lastKnownAddr
+	}
+	return net.JoinHostPort(host, strconv.Itoa(agentTCPPort))
+}
+
+type readerOnly struct {
+	io.Reader
+}
+
+func (s *RuntimeService) rememberTransferOverride(transferRecord domain.Transfer) {
+	s.overrideMu.Lock()
+	defer s.overrideMu.Unlock()
+	if s.overrides == nil {
+		s.overrides = make(map[string]domain.Transfer)
+	}
+	s.overrides[transferRecord.TransferID] = normalizeTransferRecord(transferRecord)
+}
+
+func (s *RuntimeService) clearTransferOverride(transferID string) {
+	s.overrideMu.Lock()
+	defer s.overrideMu.Unlock()
+	delete(s.overrides, transferID)
+}
+
+func (s *RuntimeService) mergeTransferOverride(transferRecord domain.Transfer) domain.Transfer {
+	s.overrideMu.RLock()
+	override, ok := s.overrides[transferRecord.TransferID]
+	s.overrideMu.RUnlock()
+	if !ok {
+		return transferRecord
+	}
+	return normalizeTransferRecord(override)
 }
 
 func (s *RuntimeService) isTrustedPeer(deviceID string) bool {

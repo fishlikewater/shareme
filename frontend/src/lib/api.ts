@@ -77,6 +77,7 @@ export function createLocalApiClient(options: LocalApiClientOptions = {}): Local
     async sendFile(peerDeviceId: string, file: File) {
       const formData = new FormData();
       formData.append("peerDeviceId", peerDeviceId);
+      formData.append("fileSize", String(file.size));
       formData.append("file", file);
 
       const response = await fetchImpl(`${baseUrl}/api/transfers/file`, {

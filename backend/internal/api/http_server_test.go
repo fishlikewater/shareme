@@ -1,16 +1,20 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -239,6 +243,9 @@ func TestSendFileEndpointReturnsTransferSnapshot(t *testing.T) {
 	if err := writer.WriteField("peerDeviceId", "peer-1"); err != nil {
 		t.Fatalf("unexpected field error: %v", err)
 	}
+	if err := writer.WriteField("fileSize", "5"); err != nil {
+		t.Fatalf("unexpected fileSize field error: %v", err)
+	}
 	part, err := writer.CreateFormFile("file", "hello.txt")
 	if err != nil {
 		t.Fatalf("unexpected file field error: %v", err)
@@ -264,11 +271,168 @@ func TestSendFileEndpointReturnsTransferSnapshot(t *testing.T) {
 	}
 }
 
+func TestHandleFileTransfersStreamsBrowserUploadWithoutTempFileReplay(t *testing.T) {
+	service := &streamingUploadAssertionService{
+		fileReadStarted: make(chan struct{}),
+	}
+	server := NewHTTPServer(service, NewEventBus())
+
+	bodyReader, bodyWriter := io.Pipe()
+	writer := multipart.NewWriter(bodyWriter)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/transfers/file", bodyReader)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		server.Handler().ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	if err := writer.WriteField("peerDeviceId", "peer-1"); err != nil {
+		t.Fatalf("unexpected peer field error: %v", err)
+	}
+	if err := writer.WriteField("fileSize", "11"); err != nil {
+		t.Fatalf("unexpected fileSize field error: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "hello.txt")
+	if err != nil {
+		t.Fatalf("unexpected file field error: %v", err)
+	}
+	if _, err := io.WriteString(part, "hello"); err != nil {
+		t.Fatalf("unexpected file prefix write error: %v", err)
+	}
+
+	select {
+	case <-service.fileReadStarted:
+	case <-time.After(300 * time.Millisecond):
+		_ = writer.Close()
+		_ = bodyWriter.Close()
+		<-done
+		t.Fatal("expected SendFile to receive a streaming reader before multipart body closed")
+	}
+
+	if _, err := io.WriteString(part, " world"); err != nil {
+		t.Fatalf("unexpected file suffix write error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("unexpected writer close error: %v", err)
+	}
+	if err := bodyWriter.Close(); err != nil {
+		t.Fatalf("unexpected body close error: %v", err)
+	}
+
+	<-done
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	if service.readerType == "*os.File" {
+		t.Fatalf("expected streaming reader, got %s", service.readerType)
+	}
+	if string(service.fileContent) != "hello world" {
+		t.Fatalf("unexpected streamed file content: %q", string(service.fileContent))
+	}
+}
+
+func TestSendFileEndpointRequiresPeerDeviceID(t *testing.T) {
+	body := &strings.Builder{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("fileSize", "5"); err != nil {
+		t.Fatalf("unexpected fileSize field error: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "hello.txt")
+	if err != nil {
+		t.Fatalf("unexpected file field error: %v", err)
+	}
+	if _, err := io.WriteString(part, "hello"); err != nil {
+		t.Fatalf("unexpected file write error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("unexpected writer close error: %v", err)
+	}
+
+	server := NewHTTPServer(pairingTestService{}, NewEventBus())
+	req := httptest.NewRequest(http.MethodPost, "/api/transfers/file", strings.NewReader(body.String()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "peerDeviceId is required") {
+		t.Fatalf("unexpected error body: %q", rec.Body.String())
+	}
+}
+
+func TestSendFileEndpointRequiresFile(t *testing.T) {
+	body := &strings.Builder{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("peerDeviceId", "peer-1"); err != nil {
+		t.Fatalf("unexpected field error: %v", err)
+	}
+	if err := writer.WriteField("fileSize", "5"); err != nil {
+		t.Fatalf("unexpected fileSize field error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("unexpected writer close error: %v", err)
+	}
+
+	server := NewHTTPServer(pairingTestService{}, NewEventBus())
+	req := httptest.NewRequest(http.MethodPost, "/api/transfers/file", strings.NewReader(body.String()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "file is required") {
+		t.Fatalf("unexpected error body: %q", rec.Body.String())
+	}
+}
+
+func TestSendFileEndpointRequiresFileSize(t *testing.T) {
+	body := &strings.Builder{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("peerDeviceId", "peer-1"); err != nil {
+		t.Fatalf("unexpected field error: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "hello.txt")
+	if err != nil {
+		t.Fatalf("unexpected file field error: %v", err)
+	}
+	if _, err := io.WriteString(part, "hello"); err != nil {
+		t.Fatalf("unexpected file write error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("unexpected writer close error: %v", err)
+	}
+
+	server := NewHTTPServer(pairingTestService{}, NewEventBus())
+	req := httptest.NewRequest(http.MethodPost, "/api/transfers/file", strings.NewReader(body.String()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "fileSize is required") {
+		t.Fatalf("unexpected error body: %q", rec.Body.String())
+	}
+}
+
 func TestSendFileEndpointRejectsNonLoopbackOrigin(t *testing.T) {
 	body := &strings.Builder{}
 	writer := multipart.NewWriter(body)
 	if err := writer.WriteField("peerDeviceId", "peer-1"); err != nil {
 		t.Fatalf("unexpected field error: %v", err)
+	}
+	if err := writer.WriteField("fileSize", "5"); err != nil {
+		t.Fatalf("unexpected fileSize field error: %v", err)
 	}
 	part, err := writer.CreateFormFile("file", "hello.txt")
 	if err != nil {
@@ -357,4 +521,70 @@ func testWebAssets() fs.FS {
 			Data: []byte("console.log('message-share');"),
 		},
 	}
+}
+
+type streamingUploadAssertionService struct {
+	fileReadStarted chan struct{}
+	readerType      string
+	fileContent     []byte
+}
+
+func (s *streamingUploadAssertionService) Bootstrap() (app.BootstrapSnapshot, error) {
+	return StubAppService().Bootstrap()
+}
+
+func (s *streamingUploadAssertionService) StartPairing(_ context.Context, _ string) (app.PairingSnapshot, error) {
+	return app.PairingSnapshot{}, nil
+}
+
+func (s *streamingUploadAssertionService) ConfirmPairing(_ context.Context, _ string) (app.PairingSnapshot, error) {
+	return app.PairingSnapshot{}, nil
+}
+
+func (s *streamingUploadAssertionService) SendTextMessage(_ context.Context, _ string, body string) (app.MessageSnapshot, error) {
+	return app.MessageSnapshot{
+		MessageID:      "msg-1",
+		ConversationID: "conv-peer-1",
+		Direction:      "outgoing",
+		Kind:           "text",
+		Body:           body,
+		Status:         "sent",
+	}, nil
+}
+
+func (s *streamingUploadAssertionService) SendFile(_ context.Context, peerDeviceID string, fileName string, fileSize int64, content io.Reader) (app.TransferSnapshot, error) {
+	s.readerType = fmt.Sprintf("%T", content)
+	if _, ok := content.(*os.File); ok {
+		return app.TransferSnapshot{}, errors.New("unexpected temp file replay reader")
+	}
+	if peerDeviceID != "peer-1" {
+		return app.TransferSnapshot{}, fmt.Errorf("unexpected peer: %s", peerDeviceID)
+	}
+	if fileName != "hello.txt" {
+		return app.TransferSnapshot{}, fmt.Errorf("unexpected file name: %s", fileName)
+	}
+	if fileSize != int64(len("hello world")) {
+		return app.TransferSnapshot{}, fmt.Errorf("unexpected file size: %d", fileSize)
+	}
+	prefix := make([]byte, len("hello"))
+	if _, err := io.ReadFull(content, prefix); err != nil {
+		return app.TransferSnapshot{}, err
+	}
+	if !bytes.Equal(prefix, []byte("hello")) {
+		return app.TransferSnapshot{}, fmt.Errorf("unexpected streamed prefix: %q", string(prefix))
+	}
+	close(s.fileReadStarted)
+
+	remaining, err := io.ReadAll(content)
+	if err != nil {
+		return app.TransferSnapshot{}, err
+	}
+	s.fileContent = append(prefix, remaining...)
+
+	return app.TransferSnapshot{
+		TransferID: "transfer-stream",
+		FileName:   fileName,
+		FileSize:   fileSize,
+		State:      "done",
+	}, nil
 }

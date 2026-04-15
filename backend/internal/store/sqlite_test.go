@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -212,5 +213,177 @@ func TestSaveTransferAndUpdateState(t *testing.T) {
 	}
 	if transfers[0].TransferID != "transfer-1" || transfers[0].State != "done" || transfers[0].FileName != "hello.txt" {
 		t.Fatalf("unexpected transfer: %#v", transfers[0])
+	}
+}
+
+func TestSaveTransferPersistsDirectionAndProgress(t *testing.T) {
+	db, err := Open("file::memory:?cache=shared")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer db.Close()
+
+	transfer := domain.Transfer{
+		TransferID:       "transfer-progress",
+		MessageID:        "msg-progress",
+		FileName:         "draft.zip",
+		FileSize:         16,
+		State:            "sending",
+		Direction:        "outgoing",
+		BytesTransferred: 0,
+		ProgressPercent:  0,
+		RateBytesPerSec:  0,
+		EtaSeconds:       nil,
+		CreatedAt:        time.Date(2026, 4, 10, 8, 15, 0, 0, time.UTC),
+	}
+
+	if err := db.SaveTransfer(transfer); err != nil {
+		t.Fatalf("unexpected save transfer error: %v", err)
+	}
+	if err := db.UpdateTransferProgress("transfer-progress", "sending", 9); err != nil {
+		t.Fatalf("unexpected update transfer progress error: %v", err)
+	}
+
+	transfers, err := db.ListTransfers()
+	if err != nil {
+		t.Fatalf("unexpected list transfer error: %v", err)
+	}
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %#v", transfers)
+	}
+	if transfers[0].Direction != "outgoing" || transfers[0].BytesTransferred != 9 {
+		t.Fatalf("unexpected persisted transfer progress: %#v", transfers[0])
+	}
+}
+
+func TestOpenBackfillsLegacyTransferDirectionFromMessage(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("unexpected raw open error: %v", err)
+	}
+	defer raw.Close()
+
+	schema := []string{
+		`create table messages (
+			message_id text primary key,
+			conversation_id text not null,
+			direction text not null,
+			kind text not null,
+			body text not null,
+			status text not null,
+			created_at text not null
+		);`,
+		`create table transfers (
+			transfer_id text primary key,
+			message_id text not null,
+			file_name text not null,
+			file_size integer not null,
+			state text not null,
+			created_at text not null
+		);`,
+	}
+	for _, stmt := range schema {
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatalf("unexpected schema exec error: %v", err)
+		}
+	}
+	if _, err := raw.Exec(
+		`insert into messages (message_id, conversation_id, direction, kind, body, status, created_at)
+		 values (?, ?, ?, ?, ?, ?, ?)`,
+		"msg-legacy",
+		"conv-peer-legacy",
+		"incoming",
+		"file",
+		"hello.txt",
+		"sent",
+		time.Date(2026, 4, 10, 8, 0, 0, 0, time.UTC).Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("unexpected insert message error: %v", err)
+	}
+	if _, err := raw.Exec(
+		`insert into transfers (transfer_id, message_id, file_name, file_size, state, created_at)
+		 values (?, ?, ?, ?, ?, ?)`,
+		"transfer-legacy",
+		"msg-legacy",
+		"hello.txt",
+		5,
+		"done",
+		time.Date(2026, 4, 10, 8, 0, 1, 0, time.UTC).Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("unexpected insert transfer error: %v", err)
+	}
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("unexpected migrated open error: %v", err)
+	}
+	defer db.Close()
+
+	transfers, err := db.ListTransfers()
+	if err != nil {
+		t.Fatalf("unexpected list transfer error: %v", err)
+	}
+	if len(transfers) != 1 {
+		t.Fatalf("expected one migrated transfer, got %#v", transfers)
+	}
+	if transfers[0].Direction != "incoming" {
+		t.Fatalf("expected migrated transfer direction to follow message direction, got %#v", transfers[0])
+	}
+}
+
+func TestSaveMessageWithTransferRollsBackWhenTransferInsertFails(t *testing.T) {
+	db, err := Open("file::memory:?cache=shared")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer db.Close()
+
+	conversation, err := db.EnsureConversation("peer-atomic")
+	if err != nil {
+		t.Fatalf("unexpected ensure conversation error: %v", err)
+	}
+	if err := db.SaveTransfer(domain.Transfer{
+		TransferID: "transfer-duplicate",
+		MessageID:  "msg-existing",
+		FileName:   "existing.txt",
+		FileSize:   4,
+		State:      "done",
+		CreatedAt:  time.Date(2026, 4, 10, 8, 20, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("unexpected seed transfer error: %v", err)
+	}
+
+	message := domain.Message{
+		MessageID:      "msg-atomic",
+		ConversationID: conversation.ConversationID,
+		Direction:      "outgoing",
+		Kind:           "file",
+		Body:           "draft.zip",
+		Status:         "sending",
+		CreatedAt:      time.Date(2026, 4, 10, 8, 21, 0, 0, time.UTC),
+	}
+	transfer := domain.Transfer{
+		TransferID:       "transfer-duplicate",
+		MessageID:        message.MessageID,
+		FileName:         "draft.zip",
+		FileSize:         8,
+		State:            "sending",
+		Direction:        "outgoing",
+		BytesTransferred: 0,
+		CreatedAt:        message.CreatedAt,
+	}
+
+	if err := db.SaveMessageWithTransfer(message, transfer); err == nil {
+		t.Fatal("expected duplicate transfer insert to fail")
+	}
+
+	messages, err := db.ListMessages(conversation.ConversationID)
+	if err != nil {
+		t.Fatalf("unexpected list message error: %v", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected message insert to roll back with transfer failure, got %#v", messages)
 	}
 }

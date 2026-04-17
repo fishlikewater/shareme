@@ -1,37 +1,50 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { FileMessageCard } from "./FileMessageCard";
 import type { ConversationMessage, LocalFileSnapshot, PeerSummary } from "../lib/types";
 
 type ChatPaneProps = {
   peer?: PeerSummary;
+  conversationId?: string;
   messages: ConversationMessage[];
   sendingText: boolean;
   sendingFile: boolean;
   pickingLocalFile: boolean;
   sendingAcceleratedFile: boolean;
   pickedLocalFile: LocalFileSnapshot | null;
+  historyHasMore: boolean;
+  historyLoading: boolean;
+  historyError?: string;
   onSendText: (body: string) => Promise<void>;
   onSendFile: (file: File) => Promise<void>;
   onPickLocalFile: () => Promise<void>;
   onSendAcceleratedFile: () => Promise<void>;
+  onLoadOlderMessages: () => Promise<void>;
 };
 
 export function ChatPane({
   peer,
+  conversationId,
   messages,
   sendingText,
   sendingFile,
   pickingLocalFile,
   sendingAcceleratedFile,
   pickedLocalFile,
+  historyHasMore,
+  historyLoading,
+  historyError,
   onSendText,
   onSendFile,
   onPickLocalFile,
   onSendAcceleratedFile,
+  onLoadOlderMessages,
 }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const prependAnchorHeightRef = useRef<number | null>(null);
+  const previousConversationIDRef = useRef<string | undefined>(undefined);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,6 +87,40 @@ export function ChatPane({
     }
     await onSendAcceleratedFile();
   }
+
+  async function handleMessageListScroll() {
+    const container = messageListRef.current;
+    if (!container || !historyHasMore || historyLoading) {
+      return;
+    }
+    if (container.scrollTop > 48) {
+      return;
+    }
+    prependAnchorHeightRef.current = container.scrollHeight;
+    await onLoadOlderMessages();
+  }
+
+  useLayoutEffect(() => {
+    const container = messageListRef.current;
+    if (!container || prependAnchorHeightRef.current === null) {
+      return;
+    }
+    const delta = container.scrollHeight - prependAnchorHeightRef.current;
+    container.scrollTop += Math.max(delta, 0);
+    prependAnchorHeightRef.current = null;
+  }, [messages.length]);
+
+  useLayoutEffect(() => {
+    const container = messageListRef.current;
+    if (!container || !conversationId) {
+      previousConversationIDRef.current = conversationId;
+      return;
+    }
+    if (previousConversationIDRef.current !== conversationId) {
+      previousConversationIDRef.current = conversationId;
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [conversationId]);
 
   const canSend = Boolean(peer?.trusted && peer.reachable);
   const acceleratedBusy = pickingLocalFile || sendingAcceleratedFile;
@@ -214,7 +261,26 @@ export function ChatPane({
             )}
           </section>
 
-          <div className="ms-message-list">
+          <div
+            ref={messageListRef}
+            aria-label="消息列表"
+            className="ms-message-list"
+            data-testid="message-list"
+            onScroll={() => {
+              void handleMessageListScroll();
+            }}
+          >
+            <div className="ms-message-list__status" role="status">
+              {historyLoading
+                ? "正在加载更早消息..."
+                : historyError
+                  ? historyError
+                  : historyHasMore
+                    ? "继续上滑可加载更早消息"
+                    : messages.length > 0
+                      ? "已显示全部历史消息"
+                      : ""}
+            </div>
             {messages.length === 0 ? (
               <div className="ms-empty-card">还没有消息，先发一条试试看。</div>
             ) : null}

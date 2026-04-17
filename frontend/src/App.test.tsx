@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import type { LocalApi } from "./lib/api";
@@ -7,10 +7,15 @@ import type {
   AgentEvent,
   BootstrapSnapshot,
   LocalFileSnapshot,
+  MessageHistoryPage,
   MessageSnapshot,
   PairingSnapshot,
   TransferSnapshot,
 } from "./lib/types";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 class FakeApi implements LocalApi {
   private eventHandler?: (event: AgentEvent) => void;
@@ -20,6 +25,7 @@ class FakeApi implements LocalApi {
   readonly sentFiles: Array<{ peerDeviceId: string; file: File }> = [];
   readonly pickedLocalFiles: number[] = [];
   readonly sentAcceleratedFiles: Array<{ peerDeviceId: string; localFileId: string }> = [];
+  readonly listedHistory: Array<{ conversationId: string; beforeCursor?: string }> = [];
 
   constructor(private readonly snapshot: BootstrapSnapshot) {}
 
@@ -105,6 +111,16 @@ class FakeApi implements LocalApi {
       rateBytesPerSec: 0,
       etaSeconds: null,
       active: true,
+    };
+  }
+
+  async listMessageHistory(conversationId: string, beforeCursor?: string): Promise<MessageHistoryPage> {
+    this.listedHistory.push({ conversationId, beforeCursor });
+    return {
+      conversationId,
+      messages: [],
+      hasMore: false,
+      nextCursor: "",
     };
   }
 
@@ -210,6 +226,30 @@ const bootstrapSnapshotWithActiveTransfer: BootstrapSnapshot = {
   ],
   transfers: [activeTransferSnapshot],
 };
+
+function buildSnapshotWithHistory(total: number): BootstrapSnapshot {
+  return {
+    ...bootstrapSnapshot,
+    conversations: [
+      {
+        conversationId: "conv-peer-1",
+        peerDeviceId: "peer-1",
+        peerDeviceName: "鍔炲叕瀹ゅ壇鏈?",
+        hasMoreHistory: total > 10,
+        nextCursor: total > 10 ? "cursor-peer-1" : "",
+      },
+    ],
+    messages: Array.from({ length: total }, (_, index) => ({
+      messageId: `msg-${index.toString().padStart(2, "0")}`,
+      conversationId: "conv-peer-1",
+      direction: "incoming" as const,
+      kind: "text" as const,
+      body: `body-${index.toString().padStart(2, "0")}`,
+      status: "sent" as const,
+      createdAt: `2026-04-17T10:00:${index.toString().padStart(2, "0")}Z`,
+    })).slice(-10),
+  };
+}
 
 describe("App", () => {
   it("渲染新的传输工作台并展示设备与历史消息", async () => {
@@ -375,6 +415,7 @@ describe("App", () => {
       sendFile: vi.fn(),
       pickLocalFile: vi.fn(),
       sendAcceleratedFile: vi.fn(),
+      listMessageHistory: vi.fn(),
       subscribeEvents: vi.fn(() => ({
         close: vi.fn(),
         reconnect: vi.fn(),
@@ -424,5 +465,218 @@ describe("App", () => {
 
     expect(screen.getAllByText("准备回退普通传输").length).toBeGreaterThan(0);
     expect(screen.getAllByText("demo.pdf")).toHaveLength(2);
+  });
+
+  it("only renders the newest ten bootstrap messages for the active conversation", async () => {
+    const api = new FakeApi(buildSnapshotWithHistory(12));
+
+    render(<App api={api} />);
+
+    const list = await screen.findByTestId("message-list");
+    expect(within(list).getByText("body-11")).toBeInTheDocument();
+    expect(within(list).queryByText("body-00")).not.toBeInTheDocument();
+  });
+
+  it("loads older messages when scrolling near the top", async () => {
+    const api = new FakeApi(buildSnapshotWithHistory(12));
+    vi.spyOn(api, "listMessageHistory").mockResolvedValue({
+      conversationId: "conv-peer-1",
+      hasMore: false,
+      nextCursor: "",
+      messages: [
+        {
+          messageId: "msg-00",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-00",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:00Z",
+        },
+        {
+          messageId: "msg-01",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-01",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:01Z",
+        },
+      ],
+    });
+
+    render(<App api={api} />);
+
+    const list = await screen.findByTestId("message-list");
+    fireEvent.scroll(list, { target: { scrollTop: 0 } });
+
+    await waitFor(() => {
+      expect(api.listMessageHistory).toHaveBeenCalledWith("conv-peer-1", "cursor-peer-1");
+    });
+    expect(await screen.findByText("body-00")).toBeInTheDocument();
+  });
+
+  it("keeps loaded history when a realtime message arrives", async () => {
+    const api = new FakeApi(buildSnapshotWithHistory(12));
+    vi.spyOn(api, "listMessageHistory").mockResolvedValue({
+      conversationId: "conv-peer-1",
+      hasMore: false,
+      nextCursor: "",
+      messages: [
+        {
+          messageId: "msg-00",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-00",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:00Z",
+        },
+        {
+          messageId: "msg-01",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-01",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:01Z",
+        },
+      ],
+    });
+
+    render(<App api={api} />);
+
+    const list = await screen.findByTestId("message-list");
+    fireEvent.scroll(list, { target: { scrollTop: 0 } });
+    expect(await screen.findByText("body-00")).toBeInTheDocument();
+
+    act(() => {
+      api.emit({
+        eventSeq: 99,
+        kind: "message.upserted",
+        payload: {
+          messageId: "msg-live",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "live-body",
+          status: "sent",
+          createdAt: "2026-04-17T10:01:00Z",
+        },
+      });
+    });
+
+    expect(within(list).getByText("live-body")).toBeInTheDocument();
+    expect(within(list).getAllByText("body-00")).toHaveLength(1);
+  });
+
+  it("does not duplicate messages when paged history overlaps with realtime updates", async () => {
+    const api = new FakeApi(buildSnapshotWithHistory(12));
+    vi.spyOn(api, "listMessageHistory").mockResolvedValue({
+      conversationId: "conv-peer-1",
+      hasMore: false,
+      nextCursor: "",
+      messages: [
+        {
+          messageId: "msg-09",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-09",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:09Z",
+        },
+        {
+          messageId: "msg-00",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-00",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:00Z",
+        },
+      ],
+    });
+
+    render(<App api={api} />);
+
+    const list = await screen.findByTestId("message-list");
+    fireEvent.scroll(list, { target: { scrollTop: 0 } });
+
+    await waitFor(() => {
+      expect(api.listMessageHistory).toHaveBeenCalledWith("conv-peer-1", "cursor-peer-1");
+    });
+
+    act(() => {
+      api.emit({
+        eventSeq: 100,
+        kind: "message.upserted",
+        payload: {
+          messageId: "msg-00",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-00",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:00Z",
+        },
+      });
+    });
+
+    expect(within(list).getAllByText("body-00")).toHaveLength(1);
+    expect(within(list).getAllByText("body-09")).toHaveLength(1);
+  });
+
+  it("preserves loaded history after periodic bootstrap refresh", async () => {
+    vi.useFakeTimers();
+
+    const api = new FakeApi(buildSnapshotWithHistory(12));
+    const bootstrapSpy = vi.spyOn(api, "bootstrap");
+    vi.spyOn(api, "listMessageHistory").mockResolvedValue({
+      conversationId: "conv-peer-1",
+      hasMore: false,
+      nextCursor: "",
+      messages: [
+        {
+          messageId: "msg-00",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-00",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:00Z",
+        },
+        {
+          messageId: "msg-01",
+          conversationId: "conv-peer-1",
+          direction: "incoming",
+          kind: "text",
+          body: "body-01",
+          status: "sent",
+          createdAt: "2026-04-17T10:00:01Z",
+        },
+      ],
+    });
+
+    render(<App api={api} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const list = screen.getByTestId("message-list");
+    fireEvent.scroll(list, { target: { scrollTop: 0 } });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(within(list).getByText("body-00")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(bootstrapSpy).toHaveBeenCalledTimes(2);
+    expect(within(list).getByText("body-00")).toBeInTheDocument();
   });
 });

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -168,6 +169,154 @@ func TestBootstrapKeepsDiscoveryPendingWhenOnlyTrustedPeerExists(t *testing.T) {
 	}
 	if snapshot.Health["discovery"] != "broadcast-pending" {
 		t.Fatalf("expected discovery pending health, got %#v", snapshot.Health)
+	}
+}
+
+func TestBootstrapReturnsRecentTenMessagesWithHistoryCursor(t *testing.T) {
+	db, err := openAppTestStore(t)
+	if err != nil {
+		t.Fatalf("unexpected store error: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.SaveLocalDevice(domain.LocalDevice{
+		DeviceID:      "local-1",
+		DeviceName:    "office-pc",
+		PublicKeyPEM:  "public",
+		PrivateKeyPEM: "private",
+		CreatedAt:     time.Date(2026, 4, 17, 8, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("save local device: %v", err)
+	}
+	if err := db.UpsertTrustedPeer(domain.Peer{
+		DeviceID:          "peer-1",
+		DeviceName:        "meeting-room",
+		PinnedFingerprint: "fingerprint-a",
+		Trusted:           true,
+		UpdatedAt:         time.Date(2026, 4, 17, 8, 1, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("save peer: %v", err)
+	}
+
+	conversation, err := db.EnsureConversation("peer-1")
+	if err != nil {
+		t.Fatalf("ensure conversation: %v", err)
+	}
+	base := time.Date(2026, 4, 17, 8, 10, 0, 0, time.UTC)
+	for i := 0; i < 12; i++ {
+		if err := db.SaveMessage(domain.Message{
+			MessageID:      fmt.Sprintf("msg-%02d", i),
+			ConversationID: conversation.ConversationID,
+			Direction:      "incoming",
+			Kind:           "text",
+			Body:           fmt.Sprintf("body-%02d", i),
+			Status:         "sent",
+			CreatedAt:      base.Add(time.Duration(i) * time.Second),
+		}); err != nil {
+			t.Fatalf("save message %d: %v", i, err)
+		}
+	}
+
+	svc := NewRuntimeService(RuntimeDeps{
+		Config:    config.Default(),
+		Store:     db,
+		Discovery: discovery.NewRegistry(),
+		Pairings:  session.NewService(),
+	})
+
+	snapshot, err := svc.Bootstrap()
+	if err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	if len(snapshot.Conversations) != 1 {
+		t.Fatalf("expected one conversation snapshot, got %#v", snapshot.Conversations)
+	}
+	conversationSnapshot := snapshot.Conversations[0]
+	if !conversationSnapshot.HasMoreHistory {
+		t.Fatalf("expected conversation snapshot to expose more history")
+	}
+	if conversationSnapshot.NextCursor == "" {
+		t.Fatalf("expected conversation snapshot to expose next cursor")
+	}
+	if len(snapshot.Messages) != 10 {
+		t.Fatalf("expected bootstrap to keep only recent 10 messages, got %d", len(snapshot.Messages))
+	}
+	if snapshot.Messages[0].MessageID != "msg-02" || snapshot.Messages[9].MessageID != "msg-11" {
+		t.Fatalf("unexpected bootstrap message window: %#v", snapshot.Messages)
+	}
+}
+
+func TestListMessageHistoryReturnsOlderMessagesForConversation(t *testing.T) {
+	db, err := openAppTestStore(t)
+	if err != nil {
+		t.Fatalf("unexpected store error: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.SaveLocalDevice(domain.LocalDevice{
+		DeviceID:      "local-1",
+		DeviceName:    "office-pc",
+		PublicKeyPEM:  "public",
+		PrivateKeyPEM: "private",
+		CreatedAt:     time.Date(2026, 4, 17, 8, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("save local device: %v", err)
+	}
+	if err := db.UpsertTrustedPeer(domain.Peer{
+		DeviceID:          "peer-1",
+		DeviceName:        "meeting-room",
+		PinnedFingerprint: "fingerprint-a",
+		Trusted:           true,
+		UpdatedAt:         time.Date(2026, 4, 17, 8, 1, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("save peer: %v", err)
+	}
+
+	conversation, err := db.EnsureConversation("peer-1")
+	if err != nil {
+		t.Fatalf("ensure conversation: %v", err)
+	}
+	base := time.Date(2026, 4, 17, 8, 20, 0, 0, time.UTC)
+	for i := 0; i < 12; i++ {
+		if err := db.SaveMessage(domain.Message{
+			MessageID:      fmt.Sprintf("msg-%02d", i),
+			ConversationID: conversation.ConversationID,
+			Direction:      "incoming",
+			Kind:           "text",
+			Body:           fmt.Sprintf("body-%02d", i),
+			Status:         "sent",
+			CreatedAt:      base.Add(time.Duration(i) * time.Second),
+		}); err != nil {
+			t.Fatalf("save message %d: %v", i, err)
+		}
+	}
+
+	svc := NewRuntimeService(RuntimeDeps{
+		Config:    config.Default(),
+		Store:     db,
+		Discovery: discovery.NewRegistry(),
+		Pairings:  session.NewService(),
+	})
+
+	bootstrap, err := svc.Bootstrap()
+	if err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	page, err := svc.ListMessageHistory(context.Background(), conversation.ConversationID, bootstrap.Conversations[0].NextCursor)
+	if err != nil {
+		t.Fatalf("ListMessageHistory() error = %v", err)
+	}
+	if page.ConversationID != conversation.ConversationID {
+		t.Fatalf("unexpected conversation id: %#v", page)
+	}
+	if page.HasMore {
+		t.Fatalf("expected second page to exhaust history")
+	}
+	if page.NextCursor != "" {
+		t.Fatalf("expected empty next cursor when history exhausted, got %q", page.NextCursor)
+	}
+	if len(page.Messages) != 2 || page.Messages[0].MessageID != "msg-00" || page.Messages[1].MessageID != "msg-01" {
+		t.Fatalf("unexpected history page: %#v", page.Messages)
 	}
 }
 

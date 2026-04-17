@@ -59,6 +59,8 @@ type ConversationSnapshot struct {
 	ConversationID string `json:"conversationId"`
 	PeerDeviceID   string `json:"peerDeviceId"`
 	PeerDeviceName string `json:"peerDeviceName"`
+	HasMoreHistory bool   `json:"hasMoreHistory"`
+	NextCursor     string `json:"nextCursor,omitempty"`
 }
 
 type MessageSnapshot struct {
@@ -105,6 +107,7 @@ type Store interface {
 	SaveMessage(message domain.Message) error
 	SaveMessageWithTransfer(message domain.Message, transfer domain.Transfer) error
 	ListMessages(conversationID string) ([]domain.Message, error)
+	ListMessagesPage(conversationID string, before domain.MessageBoundary, limit int) ([]domain.Message, bool, domain.MessageBoundary, error)
 	SaveTransfer(transfer domain.Transfer) error
 	ListTransfers() ([]domain.Transfer, error)
 	UpdateTransferState(transferID string, state string) error
@@ -120,6 +123,7 @@ type Service interface {
 	SendFile(ctx context.Context, peerDeviceID string, fileName string, fileSize int64, content io.Reader) (TransferSnapshot, error)
 	PickLocalFile(ctx context.Context) (LocalFileSnapshot, error)
 	SendAcceleratedFile(ctx context.Context, peerDeviceID string, localFileID string) (TransferSnapshot, error)
+	ListMessageHistory(ctx context.Context, conversationID string, beforeCursor string) (MessageHistoryPageSnapshot, error)
 }
 
 type EventPublisher interface {
@@ -294,11 +298,11 @@ func (s *RuntimeService) Bootstrap() (BootstrapSnapshot, error) {
 	}
 
 	peerSnapshots := mergePeerSnapshots(trustedPeers, s.discovery.List())
-	conversationSnapshots := mapConversationSnapshots(conversations, peerSnapshots)
-	messageSnapshots, err := s.mapMessageSnapshots(conversations)
+	messageSnapshots, historyWindows, err := s.mapMessageSnapshots(conversations)
 	if err != nil {
 		return BootstrapSnapshot{}, fmt.Errorf("list messages: %w", err)
 	}
+	conversationSnapshots := mapConversationSnapshots(conversations, peerSnapshots, historyWindows)
 	discoveryStatus := "broadcast-pending"
 	for _, discoveredPeer := range s.discovery.List() {
 		if discoveredPeer.Online || discoveredPeer.Reachable {
@@ -315,6 +319,30 @@ func (s *RuntimeService) Bootstrap() (BootstrapSnapshot, error) {
 		Conversations:   conversationSnapshots,
 		Messages:        messageSnapshots,
 		Transfers:       s.mapTransferSnapshots(transfers),
+	}, nil
+}
+
+func (s *RuntimeService) ListMessageHistory(_ context.Context, conversationID string, beforeCursor string) (MessageHistoryPageSnapshot, error) {
+	boundary, err := decodeMessageCursor(beforeCursor)
+	if err != nil {
+		return MessageHistoryPageSnapshot{}, fmt.Errorf("decode history cursor: %w", err)
+	}
+
+	messages, hasMore, nextBoundary, err := s.store.ListMessagesPage(conversationID, boundary, messageHistoryPageSize)
+	if err != nil {
+		return MessageHistoryPageSnapshot{}, fmt.Errorf("list history page: %w", err)
+	}
+
+	snapshots := make([]MessageSnapshot, 0, len(messages))
+	for _, message := range messages {
+		snapshots = append(snapshots, toMessageSnapshot(message))
+	}
+
+	return MessageHistoryPageSnapshot{
+		ConversationID: conversationID,
+		Messages:       snapshots,
+		HasMore:        hasMore,
+		NextCursor:     encodeMessageCursor(nextBoundary),
 	}, nil
 }
 
@@ -1450,7 +1478,12 @@ func mapPairingSnapshots(pairings []session.PairingSession) []PairingSnapshot {
 	return snapshots
 }
 
-func mapConversationSnapshots(conversations []domain.Conversation, peers []PeerSnapshot) []ConversationSnapshot {
+type conversationHistoryWindow struct {
+	HasMoreHistory bool
+	NextCursor     string
+}
+
+func mapConversationSnapshots(conversations []domain.Conversation, peers []PeerSnapshot, historyWindows map[string]conversationHistoryWindow) []ConversationSnapshot {
 	peerNames := make(map[string]string, len(peers))
 	for _, peer := range peers {
 		peerNames[peer.DeviceID] = peer.DeviceName
@@ -1458,10 +1491,13 @@ func mapConversationSnapshots(conversations []domain.Conversation, peers []PeerS
 
 	snapshots := make([]ConversationSnapshot, 0, len(conversations))
 	for _, conversation := range conversations {
+		historyWindow := historyWindows[conversation.ConversationID]
 		snapshots = append(snapshots, ConversationSnapshot{
 			ConversationID: conversation.ConversationID,
 			PeerDeviceID:   conversation.PeerDeviceID,
 			PeerDeviceName: peerNames[conversation.PeerDeviceID],
+			HasMoreHistory: historyWindow.HasMoreHistory,
+			NextCursor:     historyWindow.NextCursor,
 		})
 	}
 	return snapshots
@@ -1485,18 +1521,23 @@ func toPairingSnapshot(pairing session.PairingSession) PairingSnapshot {
 	}
 }
 
-func (s *RuntimeService) mapMessageSnapshots(conversations []domain.Conversation) ([]MessageSnapshot, error) {
+func (s *RuntimeService) mapMessageSnapshots(conversations []domain.Conversation) ([]MessageSnapshot, map[string]conversationHistoryWindow, error) {
 	snapshots := make([]MessageSnapshot, 0)
+	historyWindows := make(map[string]conversationHistoryWindow, len(conversations))
 	for _, conversation := range conversations {
-		messages, err := s.store.ListMessages(conversation.ConversationID)
+		messages, hasMore, nextBoundary, err := s.store.ListMessagesPage(conversation.ConversationID, domain.MessageBoundary{}, messageHistoryPageSize)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		historyWindows[conversation.ConversationID] = conversationHistoryWindow{
+			HasMoreHistory: hasMore,
+			NextCursor:     encodeMessageCursor(nextBoundary),
 		}
 		for _, message := range messages {
 			snapshots = append(snapshots, toMessageSnapshot(message))
 		}
 	}
-	return snapshots, nil
+	return snapshots, historyWindows, nil
 }
 
 func toMessageSnapshot(message domain.Message) MessageSnapshot {

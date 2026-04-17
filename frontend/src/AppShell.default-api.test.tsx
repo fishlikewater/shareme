@@ -42,6 +42,9 @@ describe("AppShell default api", () => {
       confirmPairing: vi.fn(),
       sendText: vi.fn(),
       sendFile: vi.fn(),
+      pickLocalFile: vi.fn(),
+      sendAcceleratedFile: vi.fn(),
+      listMessageHistory: vi.fn(),
       subscribeEvents: vi.fn(() => ({
         close: vi.fn(),
         reconnect: vi.fn(),

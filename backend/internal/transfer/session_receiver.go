@@ -17,6 +17,7 @@ type SessionReceiver struct {
 	totalSize    int64
 	tempPath     string
 	file         *os.File
+	finalizing   bool
 	completed    map[int]CompletedPart
 	inFlight     map[int]bool
 	bytesWritten int64
@@ -26,6 +27,7 @@ type SessionReceiver struct {
 var (
 	ErrPartAlreadyCompleted   = errors.New("transfer part already completed")
 	ErrPartAlreadyInProgress  = errors.New("transfer part already in progress")
+	errSessionReceiverClosed  = errors.New("session receiver already closed")
 	sessionReceiverHashFile   = fileSHA256Hex
 	sessionReceiverSyncFile   = func(file *os.File) error { return file.Sync() }
 	sessionReceiverBufferPool = sync.Pool{
@@ -39,18 +41,8 @@ func NewSessionReceiver(dir string, fileName string, totalSize int64) (*SessionR
 	if totalSize <= 0 {
 		return nil, fmt.Errorf("invalid total size: %d", totalSize)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, err
-	}
-
-	safeFileName := sanitizeFileName(fileName)
-	file, err := os.CreateTemp(dir, safeFileName+".*.part")
+	file, safeFileName, tempPath, err := createStagedDownloadFile(dir, fileName, totalSize)
 	if err != nil {
-		return nil, err
-	}
-	if err := file.Truncate(totalSize); err != nil {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
 		return nil, err
 	}
 
@@ -58,7 +50,7 @@ func NewSessionReceiver(dir string, fileName string, totalSize int64) (*SessionR
 		dir:       dir,
 		fileName:  safeFileName,
 		totalSize: totalSize,
-		tempPath:  file.Name(),
+		tempPath:  tempPath,
 		file:      file,
 		completed: make(map[int]CompletedPart),
 		inFlight:  make(map[int]bool),
@@ -77,9 +69,9 @@ func (r *SessionReceiver) WritePart(partIndex int, offset int64, length int64, c
 	}
 
 	r.mu.Lock()
-	if r.file == nil {
+	if r.file == nil || r.finalizing {
 		r.mu.Unlock()
-		return 0, fmt.Errorf("session receiver already closed")
+		return 0, errSessionReceiverClosed
 	}
 	if completed, exists := r.completed[partIndex]; exists {
 		r.mu.Unlock()
@@ -124,6 +116,10 @@ func (r *SessionReceiver) BytesReceived() int64 {
 
 func (r *SessionReceiver) Complete(expectedPartCount int, expectedSHA256 string) (string, error) {
 	r.mu.Lock()
+	if r.file == nil || r.finalizing {
+		r.mu.Unlock()
+		return "", errSessionReceiverClosed
+	}
 	if len(r.inFlight) > 0 {
 		r.mu.Unlock()
 		return "", fmt.Errorf("parts still in progress")
@@ -140,9 +136,23 @@ func (r *SessionReceiver) Complete(expectedPartCount int, expectedSHA256 string)
 	for _, part := range r.completed {
 		parts = append(parts, part)
 	}
+	r.finalizing = true
 	file := r.file
 	tempPath := r.tempPath
+	r.file = nil
 	r.mu.Unlock()
+
+	finalized := false
+	defer func() {
+		r.mu.Lock()
+		r.finalizing = false
+		if finalized {
+			r.tempPath = ""
+		} else {
+			r.tempPath = tempPath
+		}
+		r.mu.Unlock()
+	}()
 
 	sort.Slice(parts, func(i int, j int) bool {
 		if parts[i].Offset == parts[j].Offset {
@@ -158,54 +168,50 @@ func (r *SessionReceiver) Complete(expectedPartCount int, expectedSHA256 string)
 		nextOffset += part.Length
 	}
 	if nextOffset != r.totalSize {
+		_ = file.Close()
 		return "", fmt.Errorf("written bytes mismatch: have=%d want=%d", nextOffset, r.totalSize)
 	}
 
+	if err := sessionReceiverSyncFile(file); err != nil {
+		_ = file.Close()
+		return "", err
+	}
 	if expectedSHA256 != "" {
-		if err := sessionReceiverSyncFile(file); err != nil {
-			return "", err
-		}
 		actualHash, err := sessionReceiverHashFile(tempPath)
 		if err != nil {
+			_ = file.Close()
 			return "", err
 		}
 		if actualHash != expectedSHA256 {
+			_ = file.Close()
 			return "", fmt.Errorf("file sha256 mismatch")
 		}
 	}
-	if err := file.Close(); err != nil {
-		return "", err
-	}
-
-	finalPath, err := nextAvailablePath(r.dir, r.fileName)
+	finalPath, err := commitStagedDownloadFile(file, tempPath, r.dir, r.fileName)
 	if err != nil {
-		_ = os.Remove(tempPath)
 		return "", err
 	}
-	if err := os.Rename(tempPath, finalPath); err != nil {
-		_ = os.Remove(tempPath)
-		return "", err
-	}
-
-	r.mu.Lock()
-	r.file = nil
-	r.tempPath = ""
-	r.mu.Unlock()
-
+	finalized = true
 	return finalPath, nil
 }
 
 func (r *SessionReceiver) Cleanup() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.file != nil {
-		_ = r.file.Close()
-		r.file = nil
+	if r.finalizing {
+		r.mu.Unlock()
+		return errSessionReceiverClosed
 	}
-	if r.tempPath != "" {
-		_ = os.Remove(r.tempPath)
-		r.tempPath = ""
+	file := r.file
+	tempPath := r.tempPath
+	r.file = nil
+	r.tempPath = ""
+	r.mu.Unlock()
+
+	if file != nil {
+		_ = file.Close()
+	}
+	if tempPath != "" {
+		_ = os.Remove(tempPath)
 	}
 	return nil
 }

@@ -380,4 +380,41 @@ describe("createLocalApiClient", () => {
     expect(events.map((event) => event.eventSeq)).toEqual([5]);
     stream.close();
   });
+
+  it("loads older message history for a conversation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          conversationId: "conv-peer-1",
+          messages: [
+            {
+              messageId: "msg-01",
+              conversationId: "conv-peer-1",
+              direction: "incoming",
+              kind: "text",
+              body: "older body",
+              status: "sent",
+              createdAt: "2026-04-17T10:00:01Z",
+            },
+          ],
+          hasMore: true,
+          nextCursor: "cursor-2",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const api = createLocalApiClient({ fetchImpl: fetchMock });
+    const page = await api.listMessageHistory("conv-peer-1", "cursor-1");
+
+    expect(page.conversationId).toBe("conv-peer-1");
+    expect(page.nextCursor).toBe("cursor-2");
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${window.location.origin}/api/conversations/conv-peer-1/messages?before=cursor-1`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
 });

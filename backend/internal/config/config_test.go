@@ -1,11 +1,317 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestResolveDefaultDownloadDirPrefersSystemDownloadsWhenUsable(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	originalMkdirAll := downloadDirMkdirAll
+	originalCreateTemp := downloadDirCreateTemp
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+		downloadDirMkdirAll = originalMkdirAll
+		downloadDirCreateTemp = originalCreateTemp
+	})
+
+	systemDir := filepath.Join(t.TempDir(), "Downloads")
+	systemDownloadDirResolver = func() (string, error) {
+		return systemDir, nil
+	}
+	downloadDirMkdirAll = os.MkdirAll
+	downloadDirCreateTemp = os.CreateTemp
+
+	resolved, err := resolveDefaultDownloadDir(filepath.Join(t.TempDir(), "data"))
+	if err != nil {
+		t.Fatalf("expected system downloads dir to resolve, got error: %v", err)
+	}
+	if resolved != systemDir {
+		t.Fatalf("expected system downloads dir %s, got %s", systemDir, resolved)
+	}
+	if info, err := os.Stat(systemDir); err != nil {
+		t.Fatalf("expected system downloads dir to be prepared: %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("expected system downloads path to be a directory, got file")
+	}
+}
+
+func TestResolveDefaultDownloadDirFallsBackWhenSystemDownloadsUnavailable(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	originalMkdirAll := downloadDirMkdirAll
+	originalCreateTemp := downloadDirCreateTemp
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+		downloadDirMkdirAll = originalMkdirAll
+		downloadDirCreateTemp = originalCreateTemp
+	})
+
+	blockedSystemPath := filepath.Join(t.TempDir(), "blocked-downloads")
+	if err := os.WriteFile(blockedSystemPath, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("expected blocked system path file to be created: %v", err)
+	}
+	systemDownloadDirResolver = func() (string, error) {
+		return blockedSystemPath, nil
+	}
+	downloadDirMkdirAll = os.MkdirAll
+	downloadDirCreateTemp = os.CreateTemp
+
+	dataDir := filepath.Join(t.TempDir(), "data")
+	resolved, err := resolveDefaultDownloadDir(dataDir)
+	if err != nil {
+		t.Fatalf("expected fallback downloads dir to resolve, got error: %v", err)
+	}
+	expected := filepath.Join(dataDir, "downloads")
+	if resolved != expected {
+		t.Fatalf("expected fallback downloads dir %s, got %s", expected, resolved)
+	}
+	if info, err := os.Stat(expected); err != nil {
+		t.Fatalf("expected fallback downloads dir to be prepared: %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("expected fallback downloads path to be a directory, got file")
+	}
+}
+
+func TestResolveDefaultDownloadDirReturnsErrorWhenFallbackUnavailable(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	originalMkdirAll := downloadDirMkdirAll
+	originalCreateTemp := downloadDirCreateTemp
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+		downloadDirMkdirAll = originalMkdirAll
+		downloadDirCreateTemp = originalCreateTemp
+	})
+
+	systemDownloadDirResolver = func() (string, error) {
+		return "", errors.New("system downloads unavailable")
+	}
+	downloadDirMkdirAll = os.MkdirAll
+	downloadDirCreateTemp = os.CreateTemp
+
+	blockedDataDir := filepath.Join(t.TempDir(), "blocked-data-dir")
+	if err := os.WriteFile(blockedDataDir, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("expected blocked data dir file to be created: %v", err)
+	}
+
+	resolved, err := resolveDefaultDownloadDir(blockedDataDir)
+	if err == nil {
+		t.Fatal("expected fallback resolution to fail")
+	}
+	if resolved != "" {
+		t.Fatalf("expected empty download dir on resolution failure, got %s", resolved)
+	}
+	if !strings.Contains(err.Error(), "fallback") {
+		t.Fatalf("expected fallback error context, got %v", err)
+	}
+}
+
+func TestResolveGuaranteedDownloadDirUsesTemporaryFallbackWhenCandidatesUnavailable(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	originalMkdirAll := downloadDirMkdirAll
+	originalCreateTemp := downloadDirCreateTemp
+	originalMkdirTemp := downloadDirMkdirTemp
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+		downloadDirMkdirAll = originalMkdirAll
+		downloadDirCreateTemp = originalCreateTemp
+		downloadDirMkdirTemp = originalMkdirTemp
+	})
+
+	systemDownloadDirResolver = func() (string, error) {
+		return "", errors.New("system downloads unavailable")
+	}
+
+	tempFallback := filepath.Join(t.TempDir(), "guaranteed-downloads")
+	downloadDirMkdirTemp = func(dir string, pattern string) (string, error) {
+		if err := os.MkdirAll(tempFallback, 0o755); err != nil {
+			return "", err
+		}
+		return tempFallback, nil
+	}
+	downloadDirMkdirAll = func(path string, perm os.FileMode) error {
+		if filepath.Clean(path) == filepath.Clean(tempFallback) {
+			return os.MkdirAll(path, perm)
+		}
+		return errors.New("blocked")
+	}
+	downloadDirCreateTemp = func(dir string, pattern string) (*os.File, error) {
+		if filepath.Clean(dir) == filepath.Clean(tempFallback) {
+			return os.CreateTemp(dir, pattern)
+		}
+		return nil, errors.New("blocked")
+	}
+
+	resolved := resolveGuaranteedDownloadDir(filepath.Join(t.TempDir(), "blocked-data"))
+	if filepath.Clean(resolved) != filepath.Clean(tempFallback) {
+		t.Fatalf("expected temporary fallback %s, got %s", tempFallback, resolved)
+	}
+	if info, err := os.Stat(resolved); err != nil {
+		t.Fatalf("expected temporary fallback dir to be prepared: %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("expected temporary fallback path to be a directory, got file")
+	}
+}
+
+func TestDefaultConfigSkipsDownloadDirResolutionWhenEnvironmentOverrideExists(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+	})
+
+	resolverCalls := 0
+	overrideDir := filepath.Join(t.TempDir(), "explicit-downloads")
+	systemDownloadDirResolver = func() (string, error) {
+		resolverCalls++
+		return filepath.Join(t.TempDir(), "system-downloads"), nil
+	}
+
+	t.Setenv("MESSAGE_SHARE_DATA_DIR", filepath.Join(t.TempDir(), "data"))
+	t.Setenv("MESSAGE_SHARE_DOWNLOAD_DIR", overrideDir)
+
+	cfg := Default()
+	if cfg.DefaultDownloadDir != overrideDir {
+		t.Fatalf("expected explicit download dir %s, got %s", overrideDir, cfg.DefaultDownloadDir)
+	}
+	if resolverCalls != 0 {
+		t.Fatalf("expected explicit override to skip default download dir resolution, got %d resolver calls", resolverCalls)
+	}
+	if info, err := os.Stat(overrideDir); err != nil {
+		t.Fatalf("expected explicit download dir to be prepared: %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("expected explicit download path to be a directory, got file")
+	}
+}
+
+func TestDefaultConfigFallsBackToSystemDownloadsWhenExplicitDownloadDirInvalid(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+	})
+
+	resolverCalls := 0
+	systemDir := filepath.Join(t.TempDir(), "system-downloads")
+	systemDownloadDirResolver = func() (string, error) {
+		resolverCalls++
+		return systemDir, nil
+	}
+
+	blockedOverride := filepath.Join(t.TempDir(), "blocked-download-dir")
+	if err := os.WriteFile(blockedOverride, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("expected blocked explicit download dir file to be created: %v", err)
+	}
+
+	t.Setenv("MESSAGE_SHARE_DATA_DIR", filepath.Join(t.TempDir(), "data"))
+	t.Setenv("MESSAGE_SHARE_DOWNLOAD_DIR", blockedOverride)
+
+	cfg := Default()
+	if cfg.DefaultDownloadDir != systemDir {
+		t.Fatalf("expected fallback to system downloads %s, got %s", systemDir, cfg.DefaultDownloadDir)
+	}
+	if resolverCalls != 1 {
+		t.Fatalf("expected invalid explicit download dir to probe system downloads once, got %d", resolverCalls)
+	}
+}
+
+func TestDefaultConfigValidatesExplicitDownloadDirWithoutProbingLowerPriorityDirs(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+	})
+
+	resolverCalls := 0
+	systemDownloadDirResolver = func() (string, error) {
+		resolverCalls++
+		return filepath.Join(t.TempDir(), "system-downloads"), nil
+	}
+
+	explicitDir := filepath.Join(t.TempDir(), "explicit-download-dir")
+	t.Setenv("MESSAGE_SHARE_DATA_DIR", filepath.Join(t.TempDir(), "data"))
+	t.Setenv("MESSAGE_SHARE_DOWNLOAD_DIR", explicitDir)
+
+	cfg := Default()
+	if cfg.DefaultDownloadDir != explicitDir {
+		t.Fatalf("expected valid explicit download dir %s, got %s", explicitDir, cfg.DefaultDownloadDir)
+	}
+	if resolverCalls != 0 {
+		t.Fatalf("expected valid explicit override to skip lower-priority probes, got %d resolver calls", resolverCalls)
+	}
+}
+
+func TestDefaultConfigFallsBackToDataDirDownloadsWhenExplicitAndSystemDownloadsInvalid(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+	})
+
+	resolverCalls := 0
+	systemDownloadDirResolver = func() (string, error) {
+		resolverCalls++
+		return "", errors.New("system downloads unavailable")
+	}
+
+	blockedOverride := filepath.Join(t.TempDir(), "blocked-download-dir")
+	if err := os.WriteFile(blockedOverride, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("expected blocked explicit download dir file to be created: %v", err)
+	}
+
+	dataDir := filepath.Join(t.TempDir(), "data")
+	t.Setenv("MESSAGE_SHARE_DATA_DIR", dataDir)
+	t.Setenv("MESSAGE_SHARE_DOWNLOAD_DIR", blockedOverride)
+
+	cfg := Default()
+	expected := filepath.Join(dataDir, "downloads")
+	if cfg.DefaultDownloadDir != expected {
+		t.Fatalf("expected fallback to data dir downloads %s, got %s", expected, cfg.DefaultDownloadDir)
+	}
+	if resolverCalls != 1 {
+		t.Fatalf("expected invalid explicit download dir to probe system downloads once, got %d", resolverCalls)
+	}
+}
+
+func TestDefaultConfigFallsBackToResolvedDataDirWhenConfiguredDataDirInvalid(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+	})
+
+	systemDownloadDirResolver = func() (string, error) {
+		return "", errors.New("system downloads unavailable")
+	}
+
+	blockedDataDir := filepath.Join(t.TempDir(), "blocked-data-dir")
+	if err := os.WriteFile(blockedDataDir, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("expected blocked data dir file to be created: %v", err)
+	}
+
+	fallbackHome := filepath.Join(t.TempDir(), "fallback-home")
+	if err := os.MkdirAll(fallbackHome, 0o755); err != nil {
+		t.Fatalf("expected fallback home directory to be created: %v", err)
+	}
+
+	blockedConfigBase := filepath.Join(t.TempDir(), "blocked-config-base")
+	if err := os.WriteFile(blockedConfigBase, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("expected blocked config base file to be created: %v", err)
+	}
+
+	t.Setenv("APPDATA", blockedConfigBase)
+	t.Setenv("XDG_CONFIG_HOME", blockedConfigBase)
+	t.Setenv("USERPROFILE", fallbackHome)
+	t.Setenv("HOME", fallbackHome)
+	t.Setenv("MESSAGE_SHARE_DATA_DIR", blockedDataDir)
+
+	cfg := Default()
+	expectedDataDir := filepath.Join(fallbackHome, "MessageShare")
+	expectedDownloadDir := filepath.Join(expectedDataDir, "downloads")
+	if cfg.DataDir != expectedDataDir {
+		t.Fatalf("expected invalid configured data dir to fall back to %s, got %s", expectedDataDir, cfg.DataDir)
+	}
+	if cfg.DefaultDownloadDir != expectedDownloadDir {
+		t.Fatalf("expected download dir to use resolved data dir fallback %s, got %s", expectedDownloadDir, cfg.DefaultDownloadDir)
+	}
+}
 
 func TestDefaultConfigUsesLocalhostAndFixedPorts(t *testing.T) {
 	cfg := Default()
@@ -77,6 +383,15 @@ func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
 }
 
 func TestDefaultConfigFallsBackWhenUserConfigDirCannotBeCreated(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+	})
+
+	systemDownloadDirResolver = func() (string, error) {
+		return "", errors.New("skip system downloads")
+	}
+
 	brokenConfigBase := filepath.Join(t.TempDir(), "broken-config-base")
 	if err := os.WriteFile(brokenConfigBase, []byte("not-a-directory"), 0o644); err != nil {
 		t.Fatalf("expected broken config base file to be created: %v", err)

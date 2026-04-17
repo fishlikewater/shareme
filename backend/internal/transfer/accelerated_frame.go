@@ -11,6 +11,7 @@ const (
 	acceleratedFrameMagic      uint32 = 0x4d534146
 	acceleratedFrameKindHello  byte   = 1
 	acceleratedFrameKindData   byte   = 2
+	acceleratedFrameKindAck    byte   = 3
 	acceleratedMaxControlBytes        = 4096
 	acceleratedMaxPayloadBytes        = 16 << 20
 )
@@ -26,6 +27,11 @@ type AcceleratedHelloFrame struct {
 type AcceleratedDataFrame struct {
 	Offset  int64
 	Payload []byte
+}
+
+type AcceleratedAckFrame struct {
+	Offset int64
+	Length int64
 }
 
 func WriteAcceleratedHello(writer io.Writer, frame AcceleratedHelloFrame) error {
@@ -145,5 +151,46 @@ func ReadAcceleratedDataFrame(reader io.Reader) (AcceleratedDataFrame, error) {
 	return AcceleratedDataFrame{
 		Offset:  int64(binary.BigEndian.Uint64(header[5:13])),
 		Payload: payload,
+	}, nil
+}
+
+func WriteAcceleratedAckFrame(writer io.Writer, frame AcceleratedAckFrame) error {
+	if frame.Offset < 0 {
+		return fmt.Errorf("%w: negative ack offset", ErrAcceleratedInvalidFrame)
+	}
+	if frame.Length <= 0 || frame.Length > acceleratedMaxPayloadBytes {
+		return fmt.Errorf("%w: invalid ack length %d", ErrAcceleratedInvalidFrame, frame.Length)
+	}
+
+	var header [17]byte
+	binary.BigEndian.PutUint32(header[0:4], acceleratedFrameMagic)
+	header[4] = acceleratedFrameKindAck
+	binary.BigEndian.PutUint64(header[5:13], uint64(frame.Offset))
+	binary.BigEndian.PutUint32(header[13:17], uint32(frame.Length))
+
+	_, err := writer.Write(header[:])
+	return err
+}
+
+func ReadAcceleratedAckFrame(reader io.Reader) (AcceleratedAckFrame, error) {
+	var header [17]byte
+	if _, err := io.ReadFull(reader, header[:]); err != nil {
+		return AcceleratedAckFrame{}, err
+	}
+	if binary.BigEndian.Uint32(header[0:4]) != acceleratedFrameMagic {
+		return AcceleratedAckFrame{}, fmt.Errorf("%w: unexpected ack magic", ErrAcceleratedInvalidFrame)
+	}
+	if header[4] != acceleratedFrameKindAck {
+		return AcceleratedAckFrame{}, fmt.Errorf("%w: unexpected ack frame kind %d", ErrAcceleratedInvalidFrame, header[4])
+	}
+
+	length := int64(binary.BigEndian.Uint32(header[13:17]))
+	if length <= 0 || length > acceleratedMaxPayloadBytes {
+		return AcceleratedAckFrame{}, fmt.Errorf("%w: invalid ack length %d", ErrAcceleratedInvalidFrame, length)
+	}
+
+	return AcceleratedAckFrame{
+		Offset: int64(binary.BigEndian.Uint64(header[5:13])),
+		Length: length,
 	}, nil
 }

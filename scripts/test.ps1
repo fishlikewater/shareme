@@ -24,7 +24,7 @@ try {
     try {
         $env:GOCACHE = $goCacheDir
         $env:GOTELEMETRY = "off"
-        go test -p 1 ./...
+        go test -count=1 -p 1 ./...
 
         if ($LASTEXITCODE -ne 0) {
             throw ("后端测试失败，退出码：{0}" -f $LASTEXITCODE)

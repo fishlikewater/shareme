@@ -35,6 +35,11 @@ type Message struct {
 	CreatedAt      time.Time
 }
 
+type MessageBoundary struct {
+	CreatedAt time.Time
+	MessageID string
+}
+
 type Transfer struct {
 	TransferID       string
 	MessageID        string

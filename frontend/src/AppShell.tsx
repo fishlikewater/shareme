@@ -32,6 +32,14 @@ type BusyState = {
   sendingAcceleratedFile: boolean;
 };
 
+type ConversationHistoryState = {
+  olderMessages: MessageSnapshot[];
+  hasMore: boolean;
+  nextCursor?: string;
+  loading: boolean;
+  error?: string;
+};
+
 const initialBusyState: BusyState = {
   startingPairing: false,
   confirmingPairing: false,
@@ -53,6 +61,9 @@ export default function AppShell({ api }: AppProps) {
   const [commandError, setCommandError] = useState<string>();
   const [busyState, setBusyState] = useState<BusyState>(initialBusyState);
   const [pickedLocalFile, setPickedLocalFile] = useState<LocalFileSnapshot | null>(null);
+  const [historyStateByConversation, setHistoryStateByConversation] = useState<
+    Record<string, ConversationHistoryState | undefined>
+  >({});
 
   useEffect(() => {
     let subscription: ReturnType<LocalApi["subscribeEvents"]> | undefined;
@@ -61,12 +72,7 @@ export default function AppShell({ api }: AppProps) {
 
     const applySnapshot = (nextSnapshot: BootstrapSnapshot) => {
       setErrorMessage(undefined);
-      setSnapshot(nextSnapshot);
-      setSelectedPeerId((current) =>
-        current && nextSnapshot.peers.some((peer) => peer.deviceId === current)
-          ? current
-          : pickDefaultPeerId(nextSnapshot),
-      );
+      setSnapshot((current) => reconcileBootstrapSnapshot(current, nextSnapshot));
     };
 
     const load = async (subscribeAfterLoad: boolean) => {
@@ -82,7 +88,7 @@ export default function AppShell({ api }: AppProps) {
 
         applySnapshot(nextSnapshot);
 
-        if (subscribeAfterLoad && !subscription) {
+        if (!subscription) {
           subscription = resolvedApi.subscribeEvents({
             lastEventSeq: nextSnapshot.eventSeq ?? 0,
             onEvent: (event) => {
@@ -114,15 +120,41 @@ export default function AppShell({ api }: AppProps) {
     };
   }, [resolvedApi]);
 
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+    setSelectedPeerId((current) =>
+      current && snapshot.peers.some((peer) => peer.deviceId === current) ? current : pickDefaultPeerId(snapshot),
+    );
+  }, [snapshot]);
+
   const peers = useMemo(() => (snapshot ? buildPeerSummaries(snapshot) : []), [snapshot]);
   const selectedPeer = useMemo(
     () => peers.find((peer) => peer.deviceId === selectedPeerId),
     [peers, selectedPeerId],
   );
-  const selectedMessages = useMemo(
-    () => (snapshot && selectedPeer ? buildConversationMessages(snapshot, selectedPeer.deviceId) : []),
+  const selectedConversation = useMemo(
+    () =>
+      snapshot && selectedPeer
+        ? snapshot.conversations.find((conversation) => conversation.peerDeviceId === selectedPeer.deviceId)
+        : undefined,
     [selectedPeer, snapshot],
   );
+  const selectedHistoryState = useMemo(
+    () => (selectedConversation ? historyStateByConversation[selectedConversation.conversationId] : undefined),
+    [historyStateByConversation, selectedConversation],
+  );
+  const selectedMessages = useMemo(
+    () =>
+      snapshot && selectedPeer
+        ? buildConversationMessages(snapshot, selectedPeer.deviceId, selectedHistoryState?.olderMessages ?? [])
+        : [],
+    [selectedHistoryState?.olderMessages, selectedPeer, snapshot],
+  );
+  const selectedHistoryHasMore = selectedHistoryState?.hasMore ?? Boolean(selectedConversation?.hasMoreHistory);
+  const selectedHistoryLoading = selectedHistoryState?.loading ?? false;
+  const selectedHistoryError = selectedHistoryState?.error;
   const activeTransfers = useMemo(
     () => (snapshot ? snapshot.transfers.filter((transfer) => transfer.active) : []),
     [snapshot],
@@ -243,6 +275,62 @@ export default function AppShell({ api }: AppProps) {
     }
   }
 
+  async function handleLoadOlderMessages() {
+    if (!selectedConversation) {
+      return;
+    }
+
+    const conversationId = selectedConversation.conversationId;
+    const historyState = historyStateByConversation[conversationId];
+    const beforeCursor = historyState?.nextCursor ?? selectedConversation.nextCursor;
+    const hasMore = historyState?.hasMore ?? Boolean(selectedConversation.hasMoreHistory);
+    if (!beforeCursor || !hasMore || historyState?.loading) {
+      return;
+    }
+
+    setHistoryStateByConversation((current) => ({
+      ...current,
+      [conversationId]: {
+        olderMessages: current[conversationId]?.olderMessages ?? [],
+        hasMore,
+        nextCursor: beforeCursor,
+        loading: true,
+        error: undefined,
+      },
+    }));
+
+    try {
+      const page = await resolvedApi.listMessageHistory(conversationId, beforeCursor);
+      startTransition(() => {
+        setHistoryStateByConversation((current) => {
+          const previous = current[conversationId];
+          const olderMessages = mergeHistoryMessages(previous?.olderMessages ?? [], page.messages);
+          return {
+            ...current,
+            [conversationId]: {
+              olderMessages,
+              hasMore: page.hasMore,
+              nextCursor: page.nextCursor,
+              loading: false,
+              error: undefined,
+            },
+          };
+        });
+      });
+    } catch (error) {
+      setHistoryStateByConversation((current) => ({
+        ...current,
+        [conversationId]: {
+          olderMessages: current[conversationId]?.olderMessages ?? [],
+          hasMore,
+          nextCursor: beforeCursor,
+          loading: false,
+          error: error instanceof Error ? error.message : "load message history failed",
+        },
+      }));
+    }
+  }
+
   if (errorMessage) {
     return (
       <main className="ms-app">
@@ -350,16 +438,21 @@ export default function AppShell({ api }: AppProps) {
           <section className="ms-main-column" ref={mainColumnRef}>
             <ChatPane
               peer={selectedPeer}
+              conversationId={selectedConversation?.conversationId}
               messages={selectedMessages}
               sendingText={busyState.sendingText}
               sendingFile={busyState.sendingFile}
               pickingLocalFile={busyState.pickingLocalFile}
               sendingAcceleratedFile={busyState.sendingAcceleratedFile}
               pickedLocalFile={pickedLocalFile}
+              historyHasMore={selectedHistoryHasMore}
+              historyLoading={selectedHistoryLoading}
+              historyError={selectedHistoryError}
               onSendText={handleSendText}
               onSendFile={handleSendFile}
               onPickLocalFile={handlePickLocalFile}
               onSendAcceleratedFile={handleSendAcceleratedFile}
+              onLoadOlderMessages={handleLoadOlderMessages}
             />
             <PairCodeDialog
               peer={selectedPeer}
@@ -428,6 +521,23 @@ function applyEvent(current: BootstrapSnapshot | null, event: AgentEvent): Boots
   };
 }
 
+function reconcileBootstrapSnapshot(
+  current: BootstrapSnapshot | null,
+  nextSnapshot: BootstrapSnapshot,
+): BootstrapSnapshot {
+  if (!current) {
+    return nextSnapshot;
+  }
+
+  const currentEventSeq = current.eventSeq ?? 0;
+  const nextEventSeq = nextSnapshot.eventSeq ?? 0;
+  if (nextEventSeq < currentEventSeq) {
+    return current;
+  }
+
+  return nextSnapshot;
+}
+
 function pickDefaultPeerId(snapshot: BootstrapSnapshot): string | undefined {
   return buildPeerSummaries(snapshot)[0]?.deviceId;
 }
@@ -436,7 +546,7 @@ function buildPeerSummaries(snapshot: BootstrapSnapshot): PeerSummary[] {
   const latestMessages = new Map<string, MessageSnapshot>();
   for (const message of snapshot.messages) {
     const current = latestMessages.get(message.conversationId);
-    if (!current || compareCreatedAt(current.createdAt, message.createdAt) < 0) {
+    if (!current || compareConversationMessage(current, message) < 0) {
       latestMessages.set(message.conversationId, message);
     }
   }
@@ -515,6 +625,7 @@ function peerPriority(peer: PeerSummary): number {
 function buildConversationMessages(
   snapshot: BootstrapSnapshot,
   peerDeviceId: string,
+  olderMessages: MessageSnapshot[] = [],
 ): ConversationMessage[] {
   const conversationId = resolveConversationId(snapshot, peerDeviceId);
   if (!conversationId) {
@@ -526,9 +637,20 @@ function buildConversationMessages(
     transfersByMessageId.set(transfer.messageId, transfer);
   }
 
-  return [...snapshot.messages]
-    .filter((message) => message.conversationId === conversationId)
-    .sort((left, right) => compareCreatedAt(left.createdAt, right.createdAt))
+  const messagesByID = new Map<string, MessageSnapshot>();
+  for (const message of olderMessages) {
+    if (message.conversationId === conversationId) {
+      messagesByID.set(message.messageId, message);
+    }
+  }
+  for (const message of snapshot.messages) {
+    if (message.conversationId === conversationId) {
+      messagesByID.set(message.messageId, message);
+    }
+  }
+
+  return [...messagesByID.values()]
+    .sort(compareConversationMessage)
     .map((message) => ({
       ...message,
       transfer: transfersByMessageId.get(message.messageId),
@@ -557,9 +679,24 @@ function ensureConversation(
         peerDeviceId,
         peerDeviceName:
           snapshot.peers.find((peer) => peer.deviceId === peerDeviceId)?.deviceName ?? peerDeviceId,
+        hasMoreHistory: false,
+        nextCursor: "",
       },
     ],
   };
+}
+
+function mergeHistoryMessages(current: MessageSnapshot[], incoming: MessageSnapshot[]): MessageSnapshot[] {
+  const messagesByID = new Map<string, MessageSnapshot>();
+  for (const message of current) {
+    messagesByID.set(message.messageId, message);
+  }
+  for (const message of incoming) {
+    if (!messagesByID.has(message.messageId)) {
+      messagesByID.set(message.messageId, message);
+    }
+  }
+  return [...messagesByID.values()].sort(compareConversationMessage);
 }
 
 function upsertPeer(
@@ -696,4 +833,12 @@ function compareCreatedAt(left: string, right: string): number {
     return leftValue - rightValue;
   }
   return left.localeCompare(right);
+}
+
+function compareConversationMessage(left: MessageSnapshot, right: MessageSnapshot): number {
+  const createdAtGap = compareCreatedAt(left.createdAt, right.createdAt);
+  if (createdAtGap !== 0) {
+    return createdAtGap;
+  }
+  return left.messageId.localeCompare(right.messageId, "en");
 }

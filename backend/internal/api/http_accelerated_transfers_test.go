@@ -51,6 +51,13 @@ func (s *acceleratedTransferTestService) SendAcceleratedFile(_ context.Context, 
 	}, nil
 }
 
+func (s *acceleratedTransferTestService) ListMessageHistory(_ context.Context, conversationID string, _ string) (app.MessageHistoryPageSnapshot, error) {
+	return app.MessageHistoryPageSnapshot{
+		ConversationID: conversationID,
+		Messages:       []app.MessageSnapshot{},
+	}, nil
+}
+
 func TestAcceleratedTransferEndpointReturnsTransferSnapshot(t *testing.T) {
 	service := &acceleratedTransferTestService{}
 	server := NewHTTPServer(service, NewEventBus())

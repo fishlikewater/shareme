@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,8 +17,8 @@ import (
 const acceleratedDefaultChunkSize int64 = 8 << 20
 
 const (
-	acceleratedSenderBlockedThreshold   = 2 * time.Second
-	acceleratedReceiverBacklogThreshold = 4 * time.Second
+	acceleratedSenderBlockedThreshold = 2 * time.Second
+	acceleratedDefaultAckTimeout      = 15 * time.Second
 )
 
 type AcceleratedSendPhase string
@@ -91,7 +92,7 @@ func (c *AcceleratedStripingController) Observe(window AcceleratedStripingWindow
 	switch {
 	case window.SenderBlocked || window.ReceiverBacklog:
 		c.stepDown()
-	case currentTPS > 0 && c.previousTPS > 0 && currentTPS >= c.previousTPS*1.15:
+	case currentTPS > 0 && c.previousTPS > 0 && currentTPS >= c.previousTPS*1.15 && !window.SenderBlocked && !window.ReceiverBacklog:
 		c.stepUp()
 	case currentTPS > 0 && c.previousTPS > 0 && currentTPS <= c.previousTPS*0.90:
 		c.stepDown()
@@ -129,6 +130,11 @@ type AcceleratedSender struct {
 	onChunkCommitted func(int64)
 }
 
+type acceleratedChunkResult struct {
+	ackLatency time.Duration
+	duration   time.Duration
+}
+
 func NewAcceleratedSender(dialLane AcceleratedDialFunc, controller *AcceleratedStripingController) *AcceleratedSender {
 	return &AcceleratedSender{
 		dialLane:   dialLane,
@@ -163,6 +169,10 @@ func (s *AcceleratedSender) Send(
 	if chunkSize <= 0 {
 		chunkSize = acceleratedDefaultChunkSize
 	}
+	ackTimeout := time.Duration(prepare.AckTimeoutMillis) * time.Millisecond
+	if ackTimeout <= 0 {
+		ackTimeout = acceleratedDefaultAckTimeout
+	}
 	controller := s.controller
 	if controller == nil {
 		controller = NewAcceleratedStripingController(prepare.InitialStripes, prepare.MaxStripes)
@@ -182,23 +192,49 @@ func (s *AcceleratedSender) Send(
 		}
 
 		tasks := make([]chunkTask, 0, stripes)
+		maxInFlightBytes := prepare.MaxInFlightBytes
+		if maxInFlightBytes <= 0 {
+			maxInFlightBytes = chunkSize * int64(stripes)
+		}
+		if maxInFlightBytes < chunkSize {
+			maxInFlightBytes = chunkSize
+		}
+		batchBytes := int64(0)
 		for laneIndex := 0; laneIndex < stripes && offset < totalSize; laneIndex++ {
 			length := chunkSize
 			if remaining := totalSize - offset; remaining < length {
 				length = remaining
+			}
+			if batchBytes > 0 && batchBytes+length > maxInFlightBytes {
+				break
 			}
 			tasks = append(tasks, chunkTask{
 				laneIndex: laneIndex,
 				offset:    offset,
 				length:    length,
 			})
+			batchBytes += length
 			offset += length
 		}
+		if len(tasks) == 0 && offset < totalSize {
+			length := chunkSize
+			if remaining := totalSize - offset; remaining < length {
+				length = remaining
+			}
+			tasks = append(tasks, chunkTask{
+				laneIndex: 0,
+				offset:    offset,
+				length:    length,
+			})
+			batchBytes = length
+			offset += length
+		}
+		receiverWindowLimited := len(tasks) < stripes && offset < totalSize
 
 		startedAt := time.Now()
 		var writtenBytes atomic.Int64
 		var senderBlocked atomic.Bool
-		var receiverBacklog atomic.Bool
+		var maxAckLatency atomic.Int64
 		errCh := make(chan error, len(tasks))
 		var wg sync.WaitGroup
 
@@ -208,7 +244,8 @@ func (s *AcceleratedSender) Send(
 			go func() {
 				defer wg.Done()
 				laneStartedAt := time.Now()
-				if err := s.sendChunk(ctx, source, prepare, task.laneIndex, task.offset, task.length); err != nil {
+				result, err := s.sendChunk(ctx, source, prepare, task.laneIndex, task.offset, task.length, ackTimeout)
+				if err != nil {
 					errCh <- err
 					return
 				}
@@ -216,8 +253,12 @@ func (s *AcceleratedSender) Send(
 				if laneDuration >= acceleratedSenderBlockedThreshold {
 					senderBlocked.Store(true)
 				}
-				if laneDuration >= acceleratedReceiverBacklogThreshold {
-					receiverBacklog.Store(true)
+				ackLatency := result.ackLatency
+				for {
+					current := maxAckLatency.Load()
+					if current >= int64(ackLatency) || maxAckLatency.CompareAndSwap(current, int64(ackLatency)) {
+						break
+					}
 				}
 				writtenBytes.Add(task.length)
 			}()
@@ -231,11 +272,15 @@ func (s *AcceleratedSender) Send(
 			}
 		}
 
+		receiverBacklog := receiverWindowLimited
+		if !receiverBacklog && time.Duration(maxAckLatency.Load()) >= ackTimeout/2 {
+			receiverBacklog = true
+		}
 		controller.Observe(AcceleratedStripingWindow{
 			BytesTransferred: writtenBytes.Load(),
 			Duration:         time.Since(startedAt),
 			SenderBlocked:    senderBlocked.Load(),
-			ReceiverBacklog:  receiverBacklog.Load(),
+			ReceiverBacklog:  receiverBacklog,
 		})
 	}
 	return nil
@@ -248,17 +293,18 @@ func (s *AcceleratedSender) sendChunk(
 	laneIndex int,
 	offset int64,
 	length int64,
-) error {
+	ackTimeout time.Duration,
+) (acceleratedChunkResult, error) {
 	if length <= 0 {
-		return nil
+		return acceleratedChunkResult{}, nil
 	}
 	if length > int64(^uint(0)>>1) {
-		return fmt.Errorf("chunk length too large: %d", length)
+		return acceleratedChunkResult{}, fmt.Errorf("chunk length too large: %d", length)
 	}
 
 	conn, err := s.dialLane(ctx, laneIndex, prepare)
 	if err != nil {
-		return &AcceleratedSendError{Phase: AcceleratedSendPhaseConnect, Err: err}
+		return acceleratedChunkResult{}, &AcceleratedSendError{Phase: AcceleratedSendPhaseConnect, Err: err}
 	}
 	defer conn.Close()
 
@@ -267,28 +313,60 @@ func (s *AcceleratedSender) sendChunk(
 		TransferToken: prepare.TransferToken,
 		LaneIndex:     laneIndex,
 	}); err != nil {
-		return &AcceleratedSendError{Phase: AcceleratedSendPhaseStream, Err: err}
+		return acceleratedChunkResult{}, &AcceleratedSendError{Phase: AcceleratedSendPhaseStream, Err: err}
 	}
 
 	buffer := make([]byte, int(length))
 	readBytes, err := source.ReadAt(buffer, offset)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return &AcceleratedSendError{Phase: AcceleratedSendPhaseSource, Err: err}
+		return acceleratedChunkResult{}, &AcceleratedSendError{Phase: AcceleratedSendPhaseSource, Err: err}
 	}
 	if int64(readBytes) != length {
-		return &AcceleratedSendError{Phase: AcceleratedSendPhaseSource, Err: io.ErrUnexpectedEOF}
+		return acceleratedChunkResult{}, &AcceleratedSendError{Phase: AcceleratedSendPhaseSource, Err: io.ErrUnexpectedEOF}
 	}
 
+	chunkStartedAt := time.Now()
 	if err := WriteAcceleratedDataFrame(conn, AcceleratedDataFrame{
 		Offset:  offset,
 		Payload: buffer[:readBytes],
 	}); err != nil {
-		return &AcceleratedSendError{Phase: AcceleratedSendPhaseStream, Err: err}
+		return acceleratedChunkResult{}, &AcceleratedSendError{Phase: AcceleratedSendPhaseStream, Err: err}
+	}
+
+	if ackTimeout > 0 {
+		_ = conn.SetReadDeadline(time.Now().Add(ackTimeout))
+	}
+	ackStartedAt := time.Now()
+	ack, err := ReadAcceleratedAckFrame(conn)
+	if err != nil {
+		if isAcceleratedAckTimeout(err) {
+			return acceleratedChunkResult{}, &AcceleratedSendError{
+				Phase: AcceleratedSendPhaseStream,
+				Err:   fmt.Errorf("receiver ack timeout: %w", err),
+			}
+		}
+		return acceleratedChunkResult{}, &AcceleratedSendError{
+			Phase: AcceleratedSendPhaseStream,
+			Err:   fmt.Errorf("read receiver ack: %w", err),
+		}
+	}
+	if ack.Offset != offset || ack.Length != int64(readBytes) {
+		return acceleratedChunkResult{}, &AcceleratedSendError{
+			Phase: AcceleratedSendPhaseStream,
+			Err: fmt.Errorf(
+				"receiver ack mismatch: offset=%d length=%d",
+				ack.Offset,
+				ack.Length,
+			),
+		}
 	}
 	if s.onChunkCommitted != nil {
 		s.onChunkCommitted(int64(readBytes))
 	}
-	return nil
+	return acceleratedChunkResult{
+		ackLatency: time.Since(ackStartedAt),
+		duration:   time.Since(chunkStartedAt),
+	}, nil
 }
 
 func acceleratedLevelsUpTo(max int) []int {
@@ -299,4 +377,12 @@ func acceleratedLevelsUpTo(max int) []int {
 		}
 	}
 	return levels
+}
+
+func isAcceleratedAckTimeout(err error) bool {
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }

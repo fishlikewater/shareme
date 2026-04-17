@@ -35,6 +35,7 @@ func Open(dsn string) (*DB, error) {
 		`create table if not exists trusted_peers (device_id text primary key, device_name text not null, pinned_fingerprint text not null, remark_name text not null default '', trusted integer not null, updated_at text not null);`,
 		`create table if not exists conversations (conversation_id text primary key, peer_device_id text not null, updated_at text not null);`,
 		`create table if not exists messages (message_id text primary key, conversation_id text not null, direction text not null default 'outgoing', kind text not null, body text not null, status text not null, created_at text not null);`,
+		`create index if not exists idx_messages_conversation_created_message on messages (conversation_id, created_at desc, message_id desc);`,
 		`create table if not exists transfers (transfer_id text primary key, message_id text not null, file_name text not null, file_size integer not null, state text not null, direction text not null default 'outgoing', bytes_transferred integer not null default 0, created_at text not null);`,
 	}
 
@@ -384,6 +385,77 @@ func (db *DB) ListMessages(conversationID string) ([]domain.Message, error) {
 	}
 
 	return messages, rows.Err()
+}
+
+func (db *DB) ListMessagesPage(conversationID string, before domain.MessageBoundary, limit int) ([]domain.Message, bool, domain.MessageBoundary, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query := `select message_id, conversation_id, direction, kind, body, status, created_at
+		from messages
+		where conversation_id = ?`
+	args := []any{conversationID}
+
+	if !before.CreatedAt.IsZero() && strings.TrimSpace(before.MessageID) != "" {
+		boundary := formatTime(before.CreatedAt)
+		query += `
+		and (created_at < ? or (created_at = ? and message_id < ?))`
+		args = append(args, boundary, boundary, before.MessageID)
+	}
+
+	query += `
+		order by created_at desc, message_id desc
+		limit ?`
+	args = append(args, limit+1)
+
+	rows, err := db.raw.Query(query, args...)
+	if err != nil {
+		return nil, false, domain.MessageBoundary{}, err
+	}
+	defer rows.Close()
+
+	messages := make([]domain.Message, 0, limit+1)
+	for rows.Next() {
+		var message domain.Message
+		var createdAt string
+		if err := rows.Scan(
+			&message.MessageID,
+			&message.ConversationID,
+			&message.Direction,
+			&message.Kind,
+			&message.Body,
+			&message.Status,
+			&createdAt,
+		); err != nil {
+			return nil, false, domain.MessageBoundary{}, err
+		}
+		message.CreatedAt = parseTime(createdAt)
+		messages = append(messages, message)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, domain.MessageBoundary{}, err
+	}
+
+	hasMore := len(messages) > limit
+	if hasMore {
+		messages = messages[:limit]
+	}
+
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+
+	var nextBoundary domain.MessageBoundary
+	if hasMore && len(messages) > 0 {
+		oldest := messages[0]
+		nextBoundary = domain.MessageBoundary{
+			CreatedAt: oldest.CreatedAt,
+			MessageID: oldest.MessageID,
+		}
+	}
+
+	return messages, hasMore, nextBoundary, nil
 }
 
 func (db *DB) SaveTransfer(transfer domain.Transfer) error {

@@ -37,6 +37,7 @@ type AcceleratedSenderFactory func(peer discovery.PeerRecord) AcceleratedFileSen
 
 type AcceleratedSessionRegistrar interface {
 	Register(registration transfer.AcceleratedSessionRegistration)
+	Unregister(sessionID string)
 }
 
 type incomingAcceleratedSession struct {
@@ -52,6 +53,8 @@ type incomingAcceleratedSession struct {
 	timer          *time.Timer
 	closed         bool
 }
+
+const acceleratedPrepareAckTimeoutMillis = 15000
 
 func (s *RuntimeService) SendAcceleratedFile(
 	ctx context.Context,
@@ -275,6 +278,7 @@ func (s *RuntimeService) PrepareAcceleratedTransfer(
 	}
 
 	chunkSize, initialStripes, maxStripes := recommendedAcceleratedProfile(request.FileSize)
+	maxInFlightBytes := recommendedAcceleratedInFlightWindow(chunkSize, maxStripes)
 	receiver, err := transfer.NewAcceleratedReceiver(s.cfg.DefaultDownloadDir, request.FileName, request.FileSize, chunkSize)
 	if err != nil {
 		return protocol.AcceleratedPrepareResponse{}, fmt.Errorf("create accelerated receiver: %w", err)
@@ -379,6 +383,8 @@ func (s *RuntimeService) PrepareAcceleratedTransfer(
 		ChunkSize:             chunkSize,
 		InitialStripes:        initialStripes,
 		MaxStripes:            maxStripes,
+		MaxInFlightBytes:      maxInFlightBytes,
+		AckTimeoutMillis:      acceleratedPrepareAckTimeoutMillis,
 		AdaptivePolicyVersion: "v1-lan-accelerated",
 		ExpiresAtRFC3339:      expiresAt.Format(time.RFC3339Nano),
 	}, nil
@@ -608,6 +614,7 @@ func (s *RuntimeService) deleteIncomingAcceleratedSession(sessionID string) {
 	sessionState := s.incomingAcceleratedSession[sessionID]
 	delete(s.incomingAcceleratedSession, sessionID)
 	s.acceleratedMu.Unlock()
+	s.unregisterIncomingAcceleratedSession(sessionID)
 	if sessionState != nil && sessionState.timer != nil {
 		sessionState.timer.Stop()
 	}
@@ -669,6 +676,7 @@ func (s *RuntimeService) takeIncomingAcceleratedSessionByTransferID(transferID s
 			continue
 		}
 		delete(s.incomingAcceleratedSession, sessionID)
+		s.unregisterIncomingAcceleratedSession(sessionID)
 		if sessionState.timer != nil {
 			sessionState.timer.Stop()
 		}
@@ -678,6 +686,13 @@ func (s *RuntimeService) takeIncomingAcceleratedSessionByTransferID(transferID s
 		return sessionState, true
 	}
 	return nil, false
+}
+
+func (s *RuntimeService) unregisterIncomingAcceleratedSession(sessionID string) {
+	if s.acceleratedSessions == nil || strings.TrimSpace(sessionID) == "" {
+		return
+	}
+	s.acceleratedSessions.Unregister(sessionID)
 }
 
 func recommendedAcceleratedProfile(fileSize int64) (int64, int, int) {
@@ -701,6 +716,16 @@ func normalizeAcceleratedStripes(value int) int {
 	default:
 		return 1
 	}
+}
+
+func recommendedAcceleratedInFlightWindow(chunkSize int64, maxStripes int) int64 {
+	if chunkSize <= 0 {
+		chunkSize = 8 << 20
+	}
+	if maxStripes <= 0 {
+		maxStripes = 1
+	}
+	return chunkSize * int64(maxStripes)
 }
 
 func newDefaultAcceleratedSender(peer discovery.PeerRecord) AcceleratedFileSender {

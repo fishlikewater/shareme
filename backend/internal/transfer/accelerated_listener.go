@@ -52,6 +52,16 @@ func (l *AcceleratedListener) Register(registration AcceleratedSessionRegistrati
 	}
 }
 
+func (l *AcceleratedListener) Unregister(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.sessions, sessionID)
+}
+
 func (l *AcceleratedListener) Serve(ctx context.Context) error {
 	stop := make(chan struct{})
 	go func() {

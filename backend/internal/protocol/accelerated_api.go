@@ -19,6 +19,8 @@ type AcceleratedPrepareResponse struct {
 	ChunkSize             int64  `json:"chunkSize"`
 	InitialStripes        int    `json:"initialStripes"`
 	MaxStripes            int    `json:"maxStripes"`
+	MaxInFlightBytes      int64  `json:"maxInFlightBytes"`
+	AckTimeoutMillis      int    `json:"ackTimeoutMillis"`
 	AdaptivePolicyVersion string `json:"adaptivePolicyVersion"`
 	ExpiresAtRFC3339      string `json:"expiresAt"`
 }

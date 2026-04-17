@@ -104,6 +104,26 @@ func TestBootstrapIncludesCurrentEventSeq(t *testing.T) {
 	}
 }
 
+func TestConversationHistoryEndpointReturnsPage(t *testing.T) {
+	server := NewHTTPServer(messageHistoryTestService{}, NewEventBus())
+	req := httptest.NewRequest(http.MethodGet, "/api/conversations/conv-peer-1/messages?before=cursor-older", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"conversationId":"conv-peer-1"`) {
+		t.Fatalf("expected conversation history payload, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"nextCursor":"cursor-oldest"`) {
+		t.Fatalf("expected next cursor in payload, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"messageId":"msg-01"`) {
+		t.Fatalf("expected paged message in payload, got %q", rec.Body.String())
+	}
+}
+
 func TestEventsEndpointReturnsEventsAfterSequence(t *testing.T) {
 	bus := NewEventBus()
 	bus.Publish("peer.updated", map[string]string{"id": "a"})
@@ -530,6 +550,65 @@ func (pairingTestService) SendAcceleratedFile(_ context.Context, _ string, local
 	}, nil
 }
 
+func (pairingTestService) ListMessageHistory(_ context.Context, _ string, _ string) (app.MessageHistoryPageSnapshot, error) {
+	return app.MessageHistoryPageSnapshot{}, fmt.Errorf("message history not supported by pairing test service")
+}
+
+type messageHistoryTestService struct{}
+
+func (messageHistoryTestService) Bootstrap() (app.BootstrapSnapshot, error) {
+	return StubAppService().Bootstrap()
+}
+
+func (messageHistoryTestService) StartPairing(_ context.Context, _ string) (app.PairingSnapshot, error) {
+	return app.PairingSnapshot{}, nil
+}
+
+func (messageHistoryTestService) ConfirmPairing(_ context.Context, _ string) (app.PairingSnapshot, error) {
+	return app.PairingSnapshot{}, nil
+}
+
+func (messageHistoryTestService) SendTextMessage(_ context.Context, _ string, _ string) (app.MessageSnapshot, error) {
+	return app.MessageSnapshot{}, nil
+}
+
+func (messageHistoryTestService) SendFile(_ context.Context, _ string, _ string, _ int64, _ io.Reader) (app.TransferSnapshot, error) {
+	return app.TransferSnapshot{}, nil
+}
+
+func (messageHistoryTestService) PickLocalFile(_ context.Context) (app.LocalFileSnapshot, error) {
+	return app.LocalFileSnapshot{}, nil
+}
+
+func (messageHistoryTestService) SendAcceleratedFile(_ context.Context, _ string, _ string) (app.TransferSnapshot, error) {
+	return app.TransferSnapshot{}, nil
+}
+
+func (messageHistoryTestService) ListMessageHistory(_ context.Context, conversationID string, beforeCursor string) (app.MessageHistoryPageSnapshot, error) {
+	if conversationID != "conv-peer-1" {
+		return app.MessageHistoryPageSnapshot{}, fmt.Errorf("unexpected conversation id: %s", conversationID)
+	}
+	if beforeCursor != "cursor-older" {
+		return app.MessageHistoryPageSnapshot{}, fmt.Errorf("unexpected cursor: %s", beforeCursor)
+	}
+	return app.MessageHistoryPageSnapshot{
+		ConversationID: conversationID,
+		HasMore:        true,
+		NextCursor:     "cursor-oldest",
+		Messages: []app.MessageSnapshot{
+			{
+				MessageID:      "msg-01",
+				ConversationID: conversationID,
+				Direction:      "incoming",
+				Kind:           "text",
+				Body:           "older body",
+				Status:         "sent",
+				CreatedAt:      "2026-04-17T08:00:01Z",
+			},
+		},
+	}, nil
+}
+
 func testWebAssets() fs.FS {
 	return fstest.MapFS{
 		"index.html": &fstest.MapFile{
@@ -613,4 +692,11 @@ func (s *streamingUploadAssertionService) PickLocalFile(_ context.Context) (app.
 
 func (s *streamingUploadAssertionService) SendAcceleratedFile(_ context.Context, _ string, _ string) (app.TransferSnapshot, error) {
 	return app.TransferSnapshot{}, errors.New("not implemented")
+}
+
+func (s *streamingUploadAssertionService) ListMessageHistory(_ context.Context, conversationID string, _ string) (app.MessageHistoryPageSnapshot, error) {
+	return app.MessageHistoryPageSnapshot{
+		ConversationID: conversationID,
+		Messages:       []app.MessageSnapshot{},
+	}, errors.New("not implemented")
 }

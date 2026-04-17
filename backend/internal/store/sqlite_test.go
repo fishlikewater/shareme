@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -178,6 +179,82 @@ func TestEnsureConversationAndListMessages(t *testing.T) {
 	}
 	if len(conversations) != 1 || conversations[0].ConversationID != conversation.ConversationID {
 		t.Fatalf("unexpected conversations: %#v", conversations)
+	}
+}
+
+func TestOpenCreatesMessageHistoryPagingIndex(t *testing.T) {
+	db, err := Open("file::memory:?cache=shared")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer db.Close()
+
+	row := db.raw.QueryRow(`select count(*) from sqlite_master where type='index' and name='idx_messages_conversation_created_message'`)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("scan index count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected paging index to exist, got count=%d", count)
+	}
+}
+
+func TestListMessagesPageUsesStableCursorBoundary(t *testing.T) {
+	db, err := Open("file::memory:?cache=shared")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer db.Close()
+
+	conversation, err := db.EnsureConversation("peer-paging")
+	if err != nil {
+		t.Fatalf("ensure conversation: %v", err)
+	}
+
+	createdAt := time.Date(2026, 4, 17, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 11; i++ {
+		if err := db.SaveMessage(domain.Message{
+			MessageID:      fmt.Sprintf("msg-%02d", i),
+			ConversationID: conversation.ConversationID,
+			Direction:      "incoming",
+			Kind:           "text",
+			Body:           fmt.Sprintf("body-%02d", i),
+			Status:         "sent",
+			CreatedAt:      createdAt,
+		}); err != nil {
+			t.Fatalf("save message %d: %v", i, err)
+		}
+	}
+
+	page, hasMore, nextBoundary, err := db.ListMessagesPage(conversation.ConversationID, domain.MessageBoundary{}, 10)
+	if err != nil {
+		t.Fatalf("ListMessagesPage() error = %v", err)
+	}
+	if !hasMore {
+		t.Fatalf("expected more history after first page")
+	}
+	if len(page) != 10 {
+		t.Fatalf("expected first page to contain 10 messages, got %d", len(page))
+	}
+	if page[0].MessageID != "msg-01" || page[9].MessageID != "msg-10" {
+		t.Fatalf("unexpected first page window: %#v", page)
+	}
+	if nextBoundary.MessageID != "msg-01" || !nextBoundary.CreatedAt.Equal(createdAt) {
+		t.Fatalf("unexpected next boundary: %#v", nextBoundary)
+	}
+
+	olderPage, hasMoreOlder, olderBoundary, err := db.ListMessagesPage(conversation.ConversationID, nextBoundary, 10)
+	if err != nil {
+		t.Fatalf("ListMessagesPage() older error = %v", err)
+	}
+	if hasMoreOlder {
+		t.Fatalf("expected second page to exhaust history")
+	}
+	if len(olderPage) != 1 || olderPage[0].MessageID != "msg-00" {
+		t.Fatalf("unexpected older page: %#v", olderPage)
+	}
+	if !olderBoundary.CreatedAt.IsZero() || olderBoundary.MessageID != "" {
+		t.Fatalf("expected empty boundary when history exhausted, got %#v", olderBoundary)
 	}
 }
 

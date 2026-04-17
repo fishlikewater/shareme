@@ -871,6 +871,20 @@ button {
   padding-right: 6px;
 }
 
+.ms-message-list__status {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(248, 250, 247, 0.9);
+  color: var(--ms-muted);
+  font-size: 12px;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+}
+
 .ms-message-card {
   display: grid;
   gap: 10px;

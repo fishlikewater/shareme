@@ -45,6 +45,8 @@ export type ConversationSnapshot = {
   conversationId: string;
   peerDeviceId: string;
   peerDeviceName: string;
+  hasMoreHistory?: boolean;
+  nextCursor?: string;
 };
 
 export type MessageSnapshot = {
@@ -88,6 +90,13 @@ export type BootstrapSnapshot = {
   messages: MessageSnapshot[];
   transfers: TransferSnapshot[];
   eventSeq?: number;
+};
+
+export type MessageHistoryPage = {
+  conversationId: string;
+  messages: MessageSnapshot[];
+  hasMore: boolean;
+  nextCursor?: string;
 };
 
 export type AgentEvent = {

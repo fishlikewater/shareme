@@ -698,12 +698,14 @@ func TestHTTPPeerTransportPrepareAcceleratedTransferPostsJSON(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(AcceleratedPrepareResponse{
-			SessionID:      "accel-session-1",
-			TransferToken:  "token-1",
-			DataPort:       19092,
-			ChunkSize:      4,
-			InitialStripes: 2,
-			MaxStripes:     8,
+			SessionID:        "accel-session-1",
+			TransferToken:    "token-1",
+			DataPort:         19092,
+			ChunkSize:        4,
+			InitialStripes:   2,
+			MaxStripes:       8,
+			MaxInFlightBytes: 16,
+			AckTimeoutMillis: 250,
 		})
 	}))
 	defer server.Close()
@@ -726,6 +728,9 @@ func TestHTTPPeerTransportPrepareAcceleratedTransferPostsJSON(t *testing.T) {
 		t.Fatalf("prepare accelerated transfer: %v", err)
 	}
 	if response.SessionID != "accel-session-1" || response.TransferToken != "token-1" || response.DataPort != 19092 {
+		t.Fatalf("unexpected accelerated prepare response: %#v", response)
+	}
+	if response.MaxInFlightBytes != 16 || response.AckTimeoutMillis != 250 {
 		t.Fatalf("unexpected accelerated prepare response: %#v", response)
 	}
 }
@@ -1037,12 +1042,14 @@ func TestPeerHTTPServerDelegatesRawTransferPartRequests(t *testing.T) {
 func TestPeerHTTPServerDelegatesAcceleratedPrepare(t *testing.T) {
 	handler := &fakePairingHandler{
 		acceleratedPrepareResponse: AcceleratedPrepareResponse{
-			SessionID:      "accel-session-1",
-			TransferToken:  "token-1",
-			DataPort:       19092,
-			ChunkSize:      4,
-			InitialStripes: 2,
-			MaxStripes:     8,
+			SessionID:        "accel-session-1",
+			TransferToken:    "token-1",
+			DataPort:         19092,
+			ChunkSize:        4,
+			InitialStripes:   2,
+			MaxStripes:       8,
+			MaxInFlightBytes: 16,
+			AckTimeoutMillis: 250,
 		},
 	}
 
@@ -1070,6 +1077,13 @@ func TestPeerHTTPServerDelegatesAcceleratedPrepare(t *testing.T) {
 	}
 	if handler.acceleratedPrepareRequest.TransferID != "transfer-accelerated-1" {
 		t.Fatalf("unexpected delegated accelerated prepare request: %#v", handler.acceleratedPrepareRequest)
+	}
+	var response AcceleratedPrepareResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode accelerated prepare response: %v", err)
+	}
+	if response.MaxInFlightBytes != 16 || response.AckTimeoutMillis != 250 {
+		t.Fatalf("unexpected accelerated prepare response payload: %#v", response)
 	}
 }
 

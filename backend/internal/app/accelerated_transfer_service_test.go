@@ -81,6 +81,170 @@ func TestPrepareAcceleratedTransferRegistersIncomingSession(t *testing.T) {
 	}
 }
 
+func TestPrepareAcceleratedTransferIncludesBackpressureHints(t *testing.T) {
+	db, err := openAppTestStore(t)
+	if err != nil {
+		t.Fatalf("open app test store: %v", err)
+	}
+	defer db.Close()
+
+	cfg := config.Default()
+	cfg.DefaultDownloadDir = t.TempDir()
+	cfg.AcceleratedEnabled = true
+	cfg.AcceleratedDataPort = 19092
+
+	if err := db.UpsertTrustedPeer(domain.Peer{
+		DeviceID:          "peer-hints",
+		DeviceName:        "peer-hints",
+		PinnedFingerprint: "fingerprint-hints",
+		Trusted:           true,
+		UpdatedAt:         time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert trusted peer: %v", err)
+	}
+
+	registrar := &capturingAcceleratedRegistrar{}
+	svc := NewRuntimeService(RuntimeDeps{
+		Config:              cfg,
+		Store:               db,
+		Discovery:           discovery.NewRegistry(),
+		Pairings:            session.NewService(),
+		AcceleratedSessions: registrar,
+	})
+
+	response, err := svc.PrepareAcceleratedTransfer(context.Background(), protocol.AcceleratedPrepareRequest{
+		TransferID:     "transfer-hints",
+		MessageID:      "msg-hints",
+		SenderDeviceID: "peer-hints",
+		FileName:       "payload.bin",
+		FileSize:       multipartThreshold + 1024,
+	})
+	if err != nil {
+		t.Fatalf("PrepareAcceleratedTransfer() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = registrar.registration.Receiver.Cleanup()
+		svc.deleteIncomingAcceleratedSession(response.SessionID)
+		svc.transfers.Finish("transfer-hints")
+	})
+
+	if response.MaxInFlightBytes < response.ChunkSize {
+		t.Fatalf("expected max in-flight bytes >= chunk size, got %#v", response)
+	}
+	if response.AckTimeoutMillis <= 0 {
+		t.Fatalf("expected positive ack timeout, got %#v", response)
+	}
+}
+
+func TestDeleteIncomingAcceleratedSessionUnregistersListenerBinding(t *testing.T) {
+	db, err := openAppTestStore(t)
+	if err != nil {
+		t.Fatalf("open app test store: %v", err)
+	}
+	defer db.Close()
+
+	cfg := config.Default()
+	cfg.DefaultDownloadDir = t.TempDir()
+	cfg.AcceleratedEnabled = true
+	cfg.AcceleratedDataPort = 19092
+
+	if err := db.UpsertTrustedPeer(domain.Peer{
+		DeviceID:          "peer-delete",
+		DeviceName:        "peer-delete",
+		PinnedFingerprint: "fingerprint-delete",
+		Trusted:           true,
+		UpdatedAt:         time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert trusted peer: %v", err)
+	}
+
+	registrar := &capturingAcceleratedRegistrar{}
+	svc := NewRuntimeService(RuntimeDeps{
+		Config:              cfg,
+		Store:               db,
+		Discovery:           discovery.NewRegistry(),
+		Pairings:            session.NewService(),
+		AcceleratedSessions: registrar,
+	})
+
+	response, err := svc.PrepareAcceleratedTransfer(context.Background(), protocol.AcceleratedPrepareRequest{
+		TransferID:     "transfer-delete",
+		MessageID:      "msg-delete",
+		SenderDeviceID: "peer-delete",
+		FileName:       "delete.bin",
+		FileSize:       multipartThreshold + 1024,
+	})
+	if err != nil {
+		t.Fatalf("PrepareAcceleratedTransfer() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = registrar.registration.Receiver.Cleanup()
+		svc.transfers.Finish("transfer-delete")
+	})
+
+	svc.deleteIncomingAcceleratedSession(response.SessionID)
+
+	if len(registrar.unregisteredSessionIDs) != 1 || registrar.unregisteredSessionIDs[0] != response.SessionID {
+		t.Fatalf("expected unregister for session %q, got %#v", response.SessionID, registrar.unregisteredSessionIDs)
+	}
+}
+
+func TestTakeIncomingAcceleratedSessionByTransferIDUnregistersListenerBinding(t *testing.T) {
+	db, err := openAppTestStore(t)
+	if err != nil {
+		t.Fatalf("open app test store: %v", err)
+	}
+	defer db.Close()
+
+	cfg := config.Default()
+	cfg.DefaultDownloadDir = t.TempDir()
+	cfg.AcceleratedEnabled = true
+	cfg.AcceleratedDataPort = 19092
+
+	if err := db.UpsertTrustedPeer(domain.Peer{
+		DeviceID:          "peer-take",
+		DeviceName:        "peer-take",
+		PinnedFingerprint: "fingerprint-take",
+		Trusted:           true,
+		UpdatedAt:         time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert trusted peer: %v", err)
+	}
+
+	registrar := &capturingAcceleratedRegistrar{}
+	svc := NewRuntimeService(RuntimeDeps{
+		Config:              cfg,
+		Store:               db,
+		Discovery:           discovery.NewRegistry(),
+		Pairings:            session.NewService(),
+		AcceleratedSessions: registrar,
+	})
+
+	response, err := svc.PrepareAcceleratedTransfer(context.Background(), protocol.AcceleratedPrepareRequest{
+		TransferID:     "transfer-take",
+		MessageID:      "msg-take",
+		SenderDeviceID: "peer-take",
+		FileName:       "take.bin",
+		FileSize:       multipartThreshold + 1024,
+	})
+	if err != nil {
+		t.Fatalf("PrepareAcceleratedTransfer() error = %v", err)
+	}
+
+	sessionState, ok := svc.takeIncomingAcceleratedSessionByTransferID("transfer-take")
+	if !ok {
+		t.Fatal("expected accelerated session to be found by transfer id")
+	}
+	t.Cleanup(func() {
+		_ = sessionState.receiver.Cleanup()
+		svc.transfers.Finish("transfer-take")
+	})
+
+	if len(registrar.unregisteredSessionIDs) != 1 || registrar.unregisteredSessionIDs[0] != response.SessionID {
+		t.Fatalf("expected unregister for session %q, got %#v", response.SessionID, registrar.unregisteredSessionIDs)
+	}
+}
+
 func TestSendAcceleratedFileFallsBackWithSameTransferID(t *testing.T) {
 	db, err := openAppTestStore(t)
 	if err != nil {
@@ -328,6 +492,12 @@ func TestCompleteAcceleratedTransferCommitsIncomingFile(t *testing.T) {
 	if _, err := registrar.registration.Receiver.ReceiveFrame(6, []byte("world")); err != nil {
 		t.Fatalf("ReceiveFrame() second chunk error = %v", err)
 	}
+	if err := registrar.registration.Receiver.AcknowledgeFrame(0, int64(len("hello "))); err != nil {
+		t.Fatalf("AcknowledgeFrame() first chunk error = %v", err)
+	}
+	if err := registrar.registration.Receiver.AcknowledgeFrame(6, int64(len("world"))); err != nil {
+		t.Fatalf("AcknowledgeFrame() second chunk error = %v", err)
+	}
 
 	completeResponse, err := svc.CompleteAcceleratedTransfer(context.Background(), protocol.AcceleratedCompleteRequest{
 		SessionID:  response.SessionID,
@@ -407,6 +577,12 @@ func TestCompleteAcceleratedTransferRejectsMissingFileSHA256(t *testing.T) {
 	}
 	if _, err := registrar.registration.Receiver.ReceiveFrame(6, []byte("world")); err != nil {
 		t.Fatalf("ReceiveFrame() second chunk error = %v", err)
+	}
+	if err := registrar.registration.Receiver.AcknowledgeFrame(0, int64(len("hello "))); err != nil {
+		t.Fatalf("AcknowledgeFrame() first chunk error = %v", err)
+	}
+	if err := registrar.registration.Receiver.AcknowledgeFrame(6, int64(len("world"))); err != nil {
+		t.Fatalf("AcknowledgeFrame() second chunk error = %v", err)
 	}
 
 	if _, err := svc.CompleteAcceleratedTransfer(context.Background(), protocol.AcceleratedCompleteRequest{
@@ -834,11 +1010,16 @@ func TestSendAcceleratedFileLoopbackIntegrationCompletesWithoutFallback(t *testi
 }
 
 type capturingAcceleratedRegistrar struct {
-	registration transfer.AcceleratedSessionRegistration
+	registration           transfer.AcceleratedSessionRegistration
+	unregisteredSessionIDs []string
 }
 
 func (c *capturingAcceleratedRegistrar) Register(registration transfer.AcceleratedSessionRegistration) {
 	c.registration = registration
+}
+
+func (c *capturingAcceleratedRegistrar) Unregister(sessionID string) {
+	c.unregisteredSessionIDs = append(c.unregisteredSessionIDs, sessionID)
 }
 
 type fakeAcceleratedPeerTransport struct {

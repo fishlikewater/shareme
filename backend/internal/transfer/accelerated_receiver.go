@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -23,16 +24,29 @@ type AcceleratedReceiver struct {
 	totalSize int64
 	chunkSize int64
 
-	tempPath string
-	file     *os.File
+	tempPath   string
+	file       *os.File
+	closing    bool
+	finalizing bool
 
 	mu               sync.Mutex
+	idle             *sync.Cond
 	windows          map[int64]int64
+	acked            map[int64]int64
 	inFlight         map[int64]bool
 	coverage         []bool
 	bytesWritten     int64
 	onFrameCommitted func(int64)
 }
+
+var (
+	errAcceleratedReceiverClosed = errors.New("accelerated receiver already closed")
+	acceleratedReceiverSyncFile  = func(file *os.File) error { return file.Sync() }
+	acceleratedReceiverHashFile  = acceleratedFileSHA256Hex
+	acceleratedReceiverWriteAt   = func(file *os.File, payload []byte, offset int64) (int, error) {
+		return file.WriteAt(payload, offset)
+	}
+)
 
 func NewAcceleratedReceiver(dir string, fileName string, totalSize int64, chunkSize int64) (*AcceleratedReceiver, error) {
 	if totalSize <= 0 {
@@ -41,33 +55,26 @@ func NewAcceleratedReceiver(dir string, fileName string, totalSize int64, chunkS
 	if chunkSize <= 0 {
 		return nil, fmt.Errorf("invalid chunk size: %d", chunkSize)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, err
-	}
-
-	safeFileName := sanitizeFileName(fileName)
-	file, err := os.CreateTemp(dir, safeFileName+".*.part")
+	file, safeFileName, tempPath, err := createStagedDownloadFile(dir, fileName, totalSize)
 	if err != nil {
-		return nil, err
-	}
-	if err := file.Truncate(totalSize); err != nil {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
 		return nil, err
 	}
 
 	coverageSize := int((totalSize + chunkSize - 1) / chunkSize)
-	return &AcceleratedReceiver{
+	receiver := &AcceleratedReceiver{
 		dir:       dir,
 		fileName:  safeFileName,
 		totalSize: totalSize,
 		chunkSize: chunkSize,
-		tempPath:  file.Name(),
+		tempPath:  tempPath,
 		file:      file,
 		windows:   make(map[int64]int64),
+		acked:     make(map[int64]int64),
 		inFlight:  make(map[int64]bool),
 		coverage:  make([]bool, coverageSize),
-	}, nil
+	}
+	receiver.idle = sync.NewCond(&receiver.mu)
+	return receiver, nil
 }
 
 func (r *AcceleratedReceiver) SetOnFrameCommitted(onFrameCommitted func(int64)) {
@@ -89,9 +96,9 @@ func (r *AcceleratedReceiver) ReceiveFrame(offset int64, payload []byte) (int64,
 	}
 
 	r.mu.Lock()
-	if r.file == nil {
+	if r.file == nil || r.finalizing || r.closing {
 		r.mu.Unlock()
-		return 0, fmt.Errorf("accelerated receiver already closed")
+		return 0, errAcceleratedReceiverClosed
 	}
 	if completedLength, exists := r.windows[offset]; exists {
 		r.mu.Unlock()
@@ -108,15 +115,22 @@ func (r *AcceleratedReceiver) ReceiveFrame(offset int64, payload []byte) (int64,
 	file := r.file
 	r.mu.Unlock()
 
-	written, err := file.WriteAt(payload, offset)
+	written, err := acceleratedReceiverWriteAt(file, payload, offset)
 
 	var onFrameCommitted func(int64)
 	r.mu.Lock()
 	delete(r.inFlight, offset)
+	if len(r.inFlight) == 0 && r.idle != nil {
+		r.idle.Broadcast()
+	}
 	if err == nil {
 		if int64(written) != length {
 			r.mu.Unlock()
 			return int64(written), io.ErrShortWrite
+		}
+		if r.closing {
+			r.mu.Unlock()
+			return int64(written), errAcceleratedReceiverClosed
 		}
 		r.windows[offset] = length
 		r.bytesWritten += length
@@ -140,7 +154,17 @@ func (r *AcceleratedReceiver) ServeLane(_ context.Context, _ int, conn net.Conn)
 			}
 			return err
 		}
-		if _, err := r.ReceiveFrame(frame.Offset, frame.Payload); err != nil {
+		written, err := r.ReceiveFrame(frame.Offset, frame.Payload)
+		if err != nil {
+			return err
+		}
+		if err := r.AcknowledgeFrame(frame.Offset, written); err != nil {
+			return err
+		}
+		if err := WriteAcceleratedAckFrame(conn, AcceleratedAckFrame{
+			Offset: frame.Offset,
+			Length: written,
+		}); err != nil {
 			return err
 		}
 	}
@@ -154,6 +178,10 @@ func (r *AcceleratedReceiver) BytesReceived() int64 {
 
 func (r *AcceleratedReceiver) Complete(expectedSHA256 string) (string, error) {
 	r.mu.Lock()
+	if r.file == nil || r.finalizing || r.closing {
+		r.mu.Unlock()
+		return "", errAcceleratedReceiverClosed
+	}
 	if len(r.inFlight) > 0 {
 		r.mu.Unlock()
 		return "", fmt.Errorf("frames still in progress")
@@ -162,10 +190,11 @@ func (r *AcceleratedReceiver) Complete(expectedSHA256 string) (string, error) {
 	for offset, length := range r.windows {
 		parts = append(parts, acceleratedWindow{offset: offset, length: length})
 	}
+	acked := make(map[int64]int64, len(r.acked))
+	for offset, length := range r.acked {
+		acked[offset] = length
+	}
 	coverage := append([]bool(nil), r.coverage...)
-	file := r.file
-	tempPath := r.tempPath
-	r.mu.Unlock()
 
 	sort.Slice(parts, func(i int, j int) bool {
 		return parts[i].offset < parts[j].offset
@@ -174,64 +203,116 @@ func (r *AcceleratedReceiver) Complete(expectedSHA256 string) (string, error) {
 	nextOffset := int64(0)
 	for _, part := range parts {
 		if part.offset != nextOffset {
+			r.mu.Unlock()
 			return "", fmt.Errorf("frame coverage mismatch at offset %d", nextOffset)
 		}
 		nextOffset += part.length
 	}
 	if nextOffset != r.totalSize {
+		r.mu.Unlock()
 		return "", fmt.Errorf("written bytes mismatch: have=%d want=%d", nextOffset, r.totalSize)
+	}
+	if len(acked) != len(parts) {
+		r.mu.Unlock()
+		return "", fmt.Errorf("frame ack incomplete: have=%d want=%d", len(acked), len(parts))
+	}
+	for _, part := range parts {
+		ackedLength, ok := acked[part.offset]
+		if !ok || ackedLength != part.length {
+			r.mu.Unlock()
+			return "", fmt.Errorf("frame ack mismatch at offset %d", part.offset)
+		}
 	}
 	for index, covered := range coverage {
 		if !covered {
+			r.mu.Unlock()
 			return "", fmt.Errorf("coverage bitmap incomplete at chunk %d", index)
 		}
 	}
+	r.finalizing = true
+	file := r.file
+	tempPath := r.tempPath
+	r.file = nil
+	r.mu.Unlock()
+
+	finalized := false
+	defer func() {
+		r.mu.Lock()
+		r.finalizing = false
+		if finalized {
+			r.tempPath = ""
+		} else {
+			r.tempPath = tempPath
+		}
+		r.mu.Unlock()
+	}()
 
 	if expectedSHA256 == "" {
+		_ = file.Close()
 		return "", fmt.Errorf("file sha256 required")
 	}
-	if err := file.Sync(); err != nil {
+	if err := acceleratedReceiverSyncFile(file); err != nil {
+		_ = file.Close()
 		return "", err
 	}
-	actualHash, err := acceleratedFileSHA256Hex(tempPath)
+	actualHash, err := acceleratedReceiverHashFile(tempPath)
 	if err != nil {
+		_ = file.Close()
 		return "", err
 	}
 	if actualHash != expectedSHA256 {
+		_ = file.Close()
 		return "", fmt.Errorf("file sha256 mismatch")
 	}
-	if err := file.Close(); err != nil {
-		return "", err
-	}
-
-	finalPath, err := nextAvailablePath(r.dir, r.fileName)
+	finalPath, err := commitStagedDownloadFile(file, tempPath, r.dir, r.fileName)
 	if err != nil {
 		return "", err
 	}
-	if err := os.Rename(tempPath, finalPath); err != nil {
-		return "", err
-	}
-
-	r.mu.Lock()
-	r.file = nil
-	r.tempPath = ""
-	r.mu.Unlock()
-
+	finalized = true
 	return finalPath, nil
 }
 
 func (r *AcceleratedReceiver) Cleanup() error {
 	r.mu.Lock()
+	if r.finalizing {
+		r.mu.Unlock()
+		return errAcceleratedReceiverClosed
+	}
+	r.closing = true
+	for len(r.inFlight) > 0 {
+		r.idle.Wait()
+	}
+	file := r.file
+	tempPath := r.tempPath
+	r.file = nil
+	r.tempPath = ""
+	r.closing = false
+	r.mu.Unlock()
+
+	if file != nil {
+		_ = file.Close()
+	}
+	if tempPath != "" {
+		_ = os.Remove(tempPath)
+	}
+	return nil
+}
+
+func (r *AcceleratedReceiver) AcknowledgeFrame(offset int64, length int64) error {
+	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.file != nil {
-		_ = r.file.Close()
-		r.file = nil
+	if r.file == nil || r.finalizing || r.closing {
+		return errAcceleratedReceiverClosed
 	}
-	if r.tempPath != "" {
-		_ = os.Remove(r.tempPath)
-		r.tempPath = ""
+	writtenLength, ok := r.windows[offset]
+	if !ok {
+		return fmt.Errorf("frame not written at offset %d", offset)
 	}
+	if writtenLength != length {
+		return fmt.Errorf("frame ack length mismatch for offset %d: have=%d want=%d", offset, length, writtenLength)
+	}
+	r.acked[offset] = length
 	return nil
 }
 

@@ -50,7 +50,9 @@ func Default() AppConfig {
 		cfg.DiscoveryUDPPort = value
 	}
 	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DATA_DIR")); value != "" {
-		cfg.DataDir = value
+		if err := ensureDownloadDirUsable(value); err == nil {
+			cfg.DataDir = value
+		}
 	}
 	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DEVICE_NAME")); value != "" {
 		cfg.DeviceName = value
@@ -66,13 +68,22 @@ func Default() AppConfig {
 	}
 
 	cfg.IdentityFilePath = filepath.Join(cfg.DataDir, "local-device.json")
-	cfg.DefaultDownloadDir = filepath.Join(cfg.DataDir, "downloads")
+	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DOWNLOAD_DIR")); value != "" {
+		if err := ensureDownloadDirUsable(value); err == nil {
+			cfg.DefaultDownloadDir = value
+		} else if resolved, resolveErr := resolveDefaultDownloadDir(cfg.DataDir); resolveErr == nil {
+			cfg.DefaultDownloadDir = resolved
+		} else {
+			cfg.DefaultDownloadDir = resolveGuaranteedDownloadDir(cfg.DataDir)
+		}
+	} else if resolved, err := resolveDefaultDownloadDir(cfg.DataDir); err == nil {
+		cfg.DefaultDownloadDir = resolved
+	} else {
+		cfg.DefaultDownloadDir = resolveGuaranteedDownloadDir(cfg.DataDir)
+	}
 
 	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_IDENTITY_FILE")); value != "" {
 		cfg.IdentityFilePath = value
-	}
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DOWNLOAD_DIR")); value != "" {
-		cfg.DefaultDownloadDir = value
 	}
 
 	return cfg

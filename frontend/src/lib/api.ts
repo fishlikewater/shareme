@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   BootstrapSnapshot,
   LocalFileSnapshot,
+  MessageHistoryPage,
   MessageSnapshot,
   PairingSnapshot,
   TransferSnapshot,
@@ -25,6 +26,7 @@ export interface LocalApi {
   sendFile: (peerDeviceId: string, file: File) => Promise<TransferSnapshot>;
   pickLocalFile: () => Promise<LocalFileSnapshot>;
   sendAcceleratedFile: (peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>;
+  listMessageHistory: (conversationId: string, beforeCursor?: string) => Promise<MessageHistoryPage>;
   subscribeEvents: (options: {
     lastEventSeq?: number;
     onEvent: (event: AgentEvent) => void;
@@ -56,12 +58,7 @@ export function createLocalApiClient(options: LocalApiClientOptions = {}): Local
 
   return {
     async bootstrap() {
-      const response = await fetchImpl(`${baseUrl}/api/bootstrap`, { method: "GET" });
-      if (!response.ok) {
-        throw new Error(`bootstrap failed: ${response.status}`);
-      }
-
-      return (await response.json()) as BootstrapSnapshot;
+      return getJSON<BootstrapSnapshot>(fetchImpl, `${baseUrl}/api/bootstrap`, `bootstrap failed`);
     },
     async startPairing(peerDeviceId: string) {
       return postJSON<PairingSnapshot>(fetchImpl, `${baseUrl}/api/pairings`, {
@@ -101,6 +98,13 @@ export function createLocalApiClient(options: LocalApiClientOptions = {}): Local
         peerDeviceId,
         localFileId,
       });
+    },
+    async listMessageHistory(conversationId: string, beforeCursor?: string) {
+      const url = new URL(`${baseUrl}/api/conversations/${encodeURIComponent(conversationId)}/messages`);
+      if (beforeCursor) {
+        url.searchParams.set("before", beforeCursor);
+      }
+      return getJSON<MessageHistoryPage>(fetchImpl, url.toString(), "list message history failed");
     },
     subscribeEvents({ lastEventSeq = 0, onEvent }) {
       let cursor = lastEventSeq;
@@ -193,6 +197,14 @@ export function createLocalApiClient(options: LocalApiClientOptions = {}): Local
 
 export function createLocalApi(options: LocalApiClientOptions = {}): LocalApi {
   return createLocalApiClient(options);
+}
+
+async function getJSON<TResponse>(fetchImpl: typeof fetch, url: string, errorPrefix: string): Promise<TResponse> {
+  const response = await fetchImpl(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(await resolveErrorMessage(response, `${errorPrefix}: ${response.status}`));
+  }
+  return (await response.json()) as TResponse;
 }
 
 async function postJSON<TResponse>(

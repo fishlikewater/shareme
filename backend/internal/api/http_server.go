@@ -54,6 +54,7 @@ func NewHTTPServer(appService app.Service, eventBus *EventBus, webAssets ...fs.F
 	server.mux.HandleFunc("/api/events/stream", server.handleEventStream)
 	server.mux.HandleFunc("/api/pairings", server.handlePairings)
 	server.mux.HandleFunc("/api/pairings/", server.handlePairingCommands)
+	server.mux.HandleFunc("/api/conversations/", server.handleConversationMessages)
 	server.mux.HandleFunc("/api/messages/text", server.handleMessages)
 	server.mux.HandleFunc("/api/transfers/file", server.handleFileTransfers)
 	server.mux.HandleFunc("/api/transfers/accelerated", server.handleAcceleratedTransfers)
@@ -343,6 +344,28 @@ func (s *HTTPServer) handleAcceleratedTransfers(w http.ResponseWriter, r *http.R
 	_ = json.NewEncoder(w).Encode(snapshot)
 }
 
+func (s *HTTPServer) handleConversationMessages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	conversationID, ok := parseConversationMessagesPath(r.URL.Path)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	page, err := s.app.ListMessageHistory(r.Context(), conversationID, r.URL.Query().Get("before"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(page)
+}
+
 func (s *HTTPServer) handleLocalFilesPick(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -549,6 +572,15 @@ func hasFileExtension(filePath string) bool {
 	return path.Ext(path.Base(filePath)) != ""
 }
 
+func parseConversationMessagesPath(requestPath string) (string, bool) {
+	trimmed := strings.TrimPrefix(requestPath, "/api/conversations/")
+	parts := strings.Split(strings.Trim(trimmed, "/"), "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || parts[1] != "messages" {
+		return "", false
+	}
+	return parts[0], true
+}
+
 type stubService struct{}
 
 func StubAppService() app.Service {
@@ -612,5 +644,13 @@ func (stubService) SendAcceleratedFile(_ context.Context, _ string, _ string) (a
 		MessageID:  "msg-accelerated-1",
 		FileName:   "demo.bin",
 		State:      "sending",
+	}, nil
+}
+
+func (stubService) ListMessageHistory(_ context.Context, conversationID string, _ string) (app.MessageHistoryPageSnapshot, error) {
+	return app.MessageHistoryPageSnapshot{
+		ConversationID: conversationID,
+		Messages:       []app.MessageSnapshot{},
+		HasMore:        false,
 	}, nil
 }

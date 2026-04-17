@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os/signal"
 	"path/filepath"
@@ -15,10 +16,12 @@ import (
 	"message-share/backend/internal/config"
 	"message-share/backend/internal/device"
 	"message-share/backend/internal/discovery"
+	"message-share/backend/internal/localfile"
 	"message-share/backend/internal/protocol"
 	"message-share/backend/internal/security"
 	"message-share/backend/internal/session"
 	"message-share/backend/internal/store"
+	"message-share/backend/internal/transfer"
 	"message-share/backend/internal/webui"
 )
 
@@ -50,6 +53,7 @@ func main() {
 	registry := discovery.NewRegistry()
 	eventBus := api.NewEventBus()
 	pairingService := session.NewService()
+	localFileManager := localfile.NewManager(localfile.NewPicker(), localfile.DefaultLeaseTTL, time.Now)
 	peerTransport := protocol.NewHTTPPeerTransport(protocol.HTTPPeerTransportOptions{
 		Scheme: "https",
 		ClientFactory: func(expectedFingerprint string) *http.Client {
@@ -59,6 +63,22 @@ func main() {
 			return protocol.NewLANPeerHTTPClient(security.NewClientTLSConfig(peerCertificate, expectedFingerprint))
 		},
 	})
+
+	var acceleratedListener *transfer.AcceleratedListener
+	acceleratedListenerErrors := make(chan error, 1)
+	if cfg.AcceleratedEnabled {
+		dataListener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.AcceleratedDataPort))
+		if err != nil {
+			log.Fatalf("listen accelerated data port: %v", err)
+		}
+		acceleratedListener = transfer.NewAcceleratedListener(dataListener)
+		go func() {
+			if err := acceleratedListener.Serve(ctx); err != nil && err != net.ErrClosed {
+				acceleratedListenerErrors <- err
+			}
+		}()
+	}
+
 	runtimeService := app.NewRuntimeService(app.RuntimeDeps{
 		Config:    cfg,
 		Store:     db,
@@ -67,7 +87,9 @@ func main() {
 		Events: app.EventPublisherFunc(func(kind string, payload any) {
 			eventBus.Publish(kind, payload)
 		}),
-		Transport: peerTransport,
+		Transport:           peerTransport,
+		LocalFiles:          localFileManager,
+		AcceleratedSessions: acceleratedListener,
 	})
 
 	discoveryRunner := discovery.NewRunner(discovery.RunnerOptions{
@@ -120,6 +142,8 @@ func main() {
 		log.Fatalf("peer server stopped with error: %v", err)
 	case err := <-localServerErrors:
 		log.Fatalf("local api server stopped with error: %v", err)
+	case err := <-acceleratedListenerErrors:
+		log.Fatalf("accelerated listener stopped with error: %v", err)
 	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -130,6 +154,11 @@ func main() {
 	}
 	if err := peerServer.Shutdown(shutdownCtx); err != nil && err != http.ErrServerClosed {
 		log.Printf("shutdown peer server: %v", err)
+	}
+	if acceleratedListener != nil {
+		if err := acceleratedListener.Close(); err != nil {
+			log.Printf("shutdown accelerated listener: %v", err)
+		}
 	}
 	if err := discoveryRunner.Close(); err != nil {
 		log.Printf("close discovery runner: %v", err)

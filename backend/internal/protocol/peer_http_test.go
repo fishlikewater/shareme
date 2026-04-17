@@ -682,6 +682,96 @@ func TestHTTPPeerTransportCompletesTransferSessionPostsJSON(t *testing.T) {
 	}
 }
 
+func TestHTTPPeerTransportPrepareAcceleratedTransferPostsJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/peer/transfers/accelerated/prepare" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		var request AcceleratedPrepareRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode accelerated prepare request: %v", err)
+		}
+		if request.TransferID != "transfer-accelerated-1" || request.FileSize != 11 {
+			t.Fatalf("unexpected accelerated prepare request: %#v", request)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AcceleratedPrepareResponse{
+			SessionID:      "accel-session-1",
+			TransferToken:  "token-1",
+			DataPort:       19092,
+			ChunkSize:      4,
+			InitialStripes: 2,
+			MaxStripes:     8,
+		})
+	}))
+	defer server.Close()
+
+	transport := NewHTTPPeerTransport(HTTPPeerTransportOptions{
+		HTTPClient: server.Client(),
+		Scheme:     "http",
+	})
+
+	response, err := transport.PrepareAcceleratedTransfer(context.Background(), discovery.PeerRecord{
+		LastKnownAddr: server.Listener.Addr().String(),
+	}, AcceleratedPrepareRequest{
+		TransferID:     "transfer-accelerated-1",
+		MessageID:      "msg-accelerated-1",
+		SenderDeviceID: "local-1",
+		FileName:       "hello.txt",
+		FileSize:       11,
+	})
+	if err != nil {
+		t.Fatalf("prepare accelerated transfer: %v", err)
+	}
+	if response.SessionID != "accel-session-1" || response.TransferToken != "token-1" || response.DataPort != 19092 {
+		t.Fatalf("unexpected accelerated prepare response: %#v", response)
+	}
+}
+
+func TestHTTPPeerTransportCompleteAcceleratedTransferPostsJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/peer/transfers/accelerated/complete" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		var request AcceleratedCompleteRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode accelerated complete request: %v", err)
+		}
+		if request.SessionID != "accel-session-1" || request.TransferID != "transfer-accelerated-1" {
+			t.Fatalf("unexpected accelerated complete request: %#v", request)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AcceleratedCompleteResponse{
+			TransferID: "transfer-accelerated-1",
+			State:      "done",
+		})
+	}))
+	defer server.Close()
+
+	transport := NewHTTPPeerTransport(HTTPPeerTransportOptions{
+		HTTPClient: server.Client(),
+		Scheme:     "http",
+	})
+
+	response, err := transport.CompleteAcceleratedTransfer(context.Background(), discovery.PeerRecord{
+		LastKnownAddr: server.Listener.Addr().String(),
+	}, AcceleratedCompleteRequest{
+		SessionID:  "accel-session-1",
+		TransferID: "transfer-accelerated-1",
+		FileSHA256: sessionTestSHA256Hex([]byte("hello world")),
+	})
+	if err != nil {
+		t.Fatalf("complete accelerated transfer: %v", err)
+	}
+	if response.TransferID != "transfer-accelerated-1" || response.State != "done" {
+		t.Fatalf("unexpected accelerated complete response: %#v", response)
+	}
+}
+
 func TestLANPeerTransportClientDisablesHTTP2AndRaisesConnectionPool(t *testing.T) {
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13}
 
@@ -944,6 +1034,78 @@ func TestPeerHTTPServerDelegatesRawTransferPartRequests(t *testing.T) {
 	}
 }
 
+func TestPeerHTTPServerDelegatesAcceleratedPrepare(t *testing.T) {
+	handler := &fakePairingHandler{
+		acceleratedPrepareResponse: AcceleratedPrepareResponse{
+			SessionID:      "accel-session-1",
+			TransferToken:  "token-1",
+			DataPort:       19092,
+			ChunkSize:      4,
+			InitialStripes: 2,
+			MaxStripes:     8,
+		},
+	}
+
+	server := NewPeerHTTPServer(handler)
+	state, _ := newPeerTLSState(t)
+
+	body, err := json.Marshal(AcceleratedPrepareRequest{
+		TransferID:     "transfer-accelerated-1",
+		MessageID:      "msg-accelerated-1",
+		SenderDeviceID: "peer-2",
+		FileName:       "hello.txt",
+		FileSize:       int64(len("hello world")),
+	})
+	if err != nil {
+		t.Fatalf("marshal accelerated prepare: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/peer/transfers/accelerated/prepare", bytes.NewReader(body))
+	request.TLS = state
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", recorder.Code)
+	}
+	if handler.acceleratedPrepareRequest.TransferID != "transfer-accelerated-1" {
+		t.Fatalf("unexpected delegated accelerated prepare request: %#v", handler.acceleratedPrepareRequest)
+	}
+}
+
+func TestPeerHTTPServerDelegatesAcceleratedComplete(t *testing.T) {
+	handler := &fakePairingHandler{
+		acceleratedCompleteResponse: AcceleratedCompleteResponse{
+			TransferID: "transfer-accelerated-1",
+			State:      "done",
+		},
+	}
+
+	server := NewPeerHTTPServer(handler)
+	state, _ := newPeerTLSState(t)
+
+	body, err := json.Marshal(AcceleratedCompleteRequest{
+		SessionID:  "accel-session-1",
+		TransferID: "transfer-accelerated-1",
+		FileSHA256: sessionTestSHA256Hex([]byte("hello world")),
+	})
+	if err != nil {
+		t.Fatalf("marshal accelerated complete: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/peer/transfers/accelerated/complete", bytes.NewReader(body))
+	request.TLS = state
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", recorder.Code)
+	}
+	if handler.acceleratedCompleteRequest.SessionID != "accel-session-1" {
+		t.Fatalf("unexpected delegated accelerated complete request: %#v", handler.acceleratedCompleteRequest)
+	}
+}
+
 func TestPeerHTTPServerDelegatesFileTransferRequests(t *testing.T) {
 	handler := &fakePairingHandler{
 		fileResponse: FileTransferResponse{
@@ -1103,24 +1265,28 @@ func newPeerTLSState(t *testing.T) (*tls.ConnectionState, string) {
 }
 
 type fakePairingHandler struct {
-	startRequest            PairingStartRequest
-	startResponse           PairingStartResponse
-	confirmRequest          PairingConfirmRequest
-	confirmResponse         PairingConfirmResponse
-	heartbeatRequest        HeartbeatRequest
-	heartbeatResponse       HeartbeatResponse
-	sessionStartRequest     TransferSessionStartRequest
-	sessionStartResponse    TransferSessionStartResponse
-	sessionPartRequest      TransferPartRequest
-	sessionPartContent      []byte
-	sessionPartResponse     TransferPartResponse
-	sessionCompleteRequest  TransferSessionCompleteRequest
-	sessionCompleteResponse TransferSessionCompleteResponse
-	textRequest             TextMessageRequest
-	fileRequest             FileTransferRequest
-	fileResponse            FileTransferResponse
-	fileContent             []byte
-	fileReadStarted         chan struct{}
+	startRequest                PairingStartRequest
+	startResponse               PairingStartResponse
+	confirmRequest              PairingConfirmRequest
+	confirmResponse             PairingConfirmResponse
+	heartbeatRequest            HeartbeatRequest
+	heartbeatResponse           HeartbeatResponse
+	sessionStartRequest         TransferSessionStartRequest
+	sessionStartResponse        TransferSessionStartResponse
+	sessionPartRequest          TransferPartRequest
+	sessionPartContent          []byte
+	sessionPartResponse         TransferPartResponse
+	sessionCompleteRequest      TransferSessionCompleteRequest
+	sessionCompleteResponse     TransferSessionCompleteResponse
+	acceleratedPrepareRequest   AcceleratedPrepareRequest
+	acceleratedPrepareResponse  AcceleratedPrepareResponse
+	acceleratedCompleteRequest  AcceleratedCompleteRequest
+	acceleratedCompleteResponse AcceleratedCompleteResponse
+	textRequest                 TextMessageRequest
+	fileRequest                 FileTransferRequest
+	fileResponse                FileTransferResponse
+	fileContent                 []byte
+	fileReadStarted             chan struct{}
 }
 
 func (f *fakePairingHandler) AcceptIncomingPairing(_ context.Context, request PairingStartRequest) (PairingStartResponse, error) {
@@ -1158,6 +1324,16 @@ func (f *fakePairingHandler) AcceptIncomingTransferPart(_ context.Context, reque
 func (f *fakePairingHandler) CompleteIncomingTransferSession(_ context.Context, request TransferSessionCompleteRequest) (TransferSessionCompleteResponse, error) {
 	f.sessionCompleteRequest = request
 	return f.sessionCompleteResponse, nil
+}
+
+func (f *fakePairingHandler) PrepareAcceleratedTransfer(_ context.Context, request AcceleratedPrepareRequest) (AcceleratedPrepareResponse, error) {
+	f.acceleratedPrepareRequest = request
+	return f.acceleratedPrepareResponse, nil
+}
+
+func (f *fakePairingHandler) CompleteAcceleratedTransfer(_ context.Context, request AcceleratedCompleteRequest) (AcceleratedCompleteResponse, error) {
+	f.acceleratedCompleteRequest = request
+	return f.acceleratedCompleteResponse, nil
 }
 
 func (f *fakePairingHandler) AcceptIncomingTextMessage(_ context.Context, request TextMessageRequest) (AckResponse, error) {

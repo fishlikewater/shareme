@@ -1,3 +1,20 @@
+type LooseString = string & {};
+
+export type MessageDirection = "incoming" | "outgoing" | LooseString;
+export type MessageKind = "text" | "file" | LooseString;
+export type MessageStatus = "sending" | "sent" | "failed" | "done" | LooseString;
+export type TransferState =
+  | "preparing"
+  | "sending"
+  | "receiving"
+  | "received"
+  | "sent"
+  | "done"
+  | "failed"
+  | "fallback_pending"
+  | "fallback_transferring"
+  | LooseString;
+
 export type HealthSnapshot = {
   status: "ok" | "degraded" | "error" | string;
   discovery: string;
@@ -33,10 +50,10 @@ export type ConversationSnapshot = {
 export type MessageSnapshot = {
   messageId: string;
   conversationId: string;
-  direction: string;
-  kind: string;
+  direction: MessageDirection;
+  kind: MessageKind;
   body: string;
-  status: string;
+  status: MessageStatus;
   createdAt: string;
 };
 
@@ -45,14 +62,21 @@ export type TransferSnapshot = {
   messageId: string;
   fileName: string;
   fileSize: number;
-  state: string;
+  state: TransferState;
   createdAt: string;
-  direction: "incoming" | "outgoing" | string;
+  direction: MessageDirection;
   bytesTransferred: number;
   progressPercent: number;
   rateBytesPerSec: number;
   etaSeconds: number | null;
   active: boolean;
+};
+
+export type LocalFileSnapshot = {
+  localFileId: string;
+  displayName: string;
+  size: number;
+  acceleratedEligible: boolean;
 };
 
 export type BootstrapSnapshot = {

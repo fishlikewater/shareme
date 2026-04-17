@@ -31,7 +31,7 @@ describe("TransferStatusBanner", () => {
     expect(screen.getByText("50%")).toBeInTheDocument();
     expect(screen.getByText("1 MB / 2 MB")).toBeInTheDocument();
     expect(screen.getByText("速率 500 KB/s")).toBeInTheDocument();
-    expect(screen.getByText("ETA 00:10")).toBeInTheDocument();
+    expect(screen.getByText("预计 10 秒")).toBeInTheDocument();
     expect(screen.getByText("接收中")).toBeInTheDocument();
   });
 
@@ -130,5 +130,42 @@ describe("TransferStatusBanner", () => {
     expect(screen.queryByText("0 B / 2 MB")).not.toBeInTheDocument();
     expect(screen.queryByText("速率 0 B/s")).not.toBeInTheDocument();
     expect(screen.getByText("接收中")).toBeInTheDocument();
+  });
+
+  it("preparing 状态展示准备极速传输文案", () => {
+    render(
+      <TransferStatusBanner
+        transfers={[
+          {
+            ...transfers[0],
+            state: "preparing",
+            bytesTransferred: 0,
+            progressPercent: 0,
+            rateBytesPerSec: 0,
+            etaSeconds: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("准备极速传输")).toBeInTheDocument();
+  });
+
+  it("极速失败回退时展示明确提示", () => {
+    render(
+      <TransferStatusBanner
+        transfers={[
+          {
+            ...transfers[0],
+            state: "fallback_pending",
+            progressPercent: 50,
+            rateBytesPerSec: 0,
+            etaSeconds: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("准备回退普通传输")).toBeInTheDocument();
   });
 });

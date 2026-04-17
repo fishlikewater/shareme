@@ -512,6 +512,24 @@ func (pairingTestService) SendFile(_ context.Context, peerDeviceID string, fileN
 	}, nil
 }
 
+func (pairingTestService) PickLocalFile(_ context.Context) (app.LocalFileSnapshot, error) {
+	return app.LocalFileSnapshot{
+		LocalFileID:         "lf-1",
+		DisplayName:         "demo.bin",
+		Size:                128,
+		AcceleratedEligible: false,
+	}, nil
+}
+
+func (pairingTestService) SendAcceleratedFile(_ context.Context, _ string, localFileID string) (app.TransferSnapshot, error) {
+	return app.TransferSnapshot{
+		TransferID: "transfer-accelerated-1",
+		MessageID:  "msg-accelerated-1",
+		FileName:   localFileID,
+		State:      "sending",
+	}, nil
+}
+
 func testWebAssets() fs.FS {
 	return fstest.MapFS{
 		"index.html": &fstest.MapFile{
@@ -587,4 +605,12 @@ func (s *streamingUploadAssertionService) SendFile(_ context.Context, peerDevice
 		FileSize:   fileSize,
 		State:      "done",
 	}, nil
+}
+
+func (s *streamingUploadAssertionService) PickLocalFile(_ context.Context) (app.LocalFileSnapshot, error) {
+	return app.LocalFileSnapshot{}, errors.New("not implemented")
+}
+
+func (s *streamingUploadAssertionService) SendAcceleratedFile(_ context.Context, _ string, _ string) (app.TransferSnapshot, error) {
+	return app.TransferSnapshot{}, errors.New("not implemented")
 }

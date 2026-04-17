@@ -56,6 +56,8 @@ func NewHTTPServer(appService app.Service, eventBus *EventBus, webAssets ...fs.F
 	server.mux.HandleFunc("/api/pairings/", server.handlePairingCommands)
 	server.mux.HandleFunc("/api/messages/text", server.handleMessages)
 	server.mux.HandleFunc("/api/transfers/file", server.handleFileTransfers)
+	server.mux.HandleFunc("/api/transfers/accelerated", server.handleAcceleratedTransfers)
+	server.mux.HandleFunc("/api/local-files/pick", server.handleLocalFilesPick)
 	return server
 }
 
@@ -312,6 +314,51 @@ func (s *HTTPServer) handleFileTransfers(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(transferSnapshot)
 }
 
+func (s *HTTPServer) handleAcceleratedTransfers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var request struct {
+		PeerDeviceID string `json:"peerDeviceId"`
+		LocalFileID  string `json:"localFileId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(request.PeerDeviceID) == "" || strings.TrimSpace(request.LocalFileID) == "" {
+		http.Error(w, "peerDeviceId and localFileId are required", http.StatusBadRequest)
+		return
+	}
+
+	snapshot, err := s.app.SendAcceleratedFile(r.Context(), request.PeerDeviceID, request.LocalFileID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(snapshot)
+}
+
+func (s *HTTPServer) handleLocalFilesPick(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	snapshot, err := s.app.PickLocalFile(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(snapshot)
+}
+
 func parseAfterSeq(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	afterSeq := int64(0)
 	if raw := r.URL.Query().Get("afterSeq"); raw != "" {
@@ -547,5 +594,23 @@ func (stubService) SendFile(_ context.Context, _ string, fileName string, _ int6
 		TransferID: "transfer-1",
 		FileName:   fileName,
 		State:      "done",
+	}, nil
+}
+
+func (stubService) PickLocalFile(_ context.Context) (app.LocalFileSnapshot, error) {
+	return app.LocalFileSnapshot{
+		LocalFileID:         "lf-1",
+		DisplayName:         "demo.bin",
+		Size:                128,
+		AcceleratedEligible: false,
+	}, nil
+}
+
+func (stubService) SendAcceleratedFile(_ context.Context, _ string, _ string) (app.TransferSnapshot, error) {
+	return app.TransferSnapshot{
+		TransferID: "transfer-accelerated-1",
+		MessageID:  "msg-accelerated-1",
+		FileName:   "demo.bin",
+		State:      "sending",
 	}, nil
 }

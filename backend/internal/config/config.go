@@ -10,6 +10,8 @@ import (
 type AppConfig struct {
 	LocalAPIAddr           string
 	AgentTCPPort           int
+	AcceleratedDataPort    int
+	AcceleratedEnabled     bool
 	DiscoveryUDPPort       int
 	DiscoveryListenAddr    string
 	DiscoveryBroadcastAddr string
@@ -24,6 +26,8 @@ func Default() AppConfig {
 	cfg := AppConfig{
 		LocalAPIAddr:        "127.0.0.1:19100",
 		AgentTCPPort:        19090,
+		AcceleratedDataPort: 19092,
+		AcceleratedEnabled:  true,
 		DiscoveryUDPPort:    19091,
 		DataDir:             resolveDefaultDataDir(),
 		DeviceName:          "本机设备",
@@ -35,6 +39,12 @@ func Default() AppConfig {
 	}
 	if value, ok := lookupEnvInt("MESSAGE_SHARE_AGENT_TCP_PORT"); ok {
 		cfg.AgentTCPPort = value
+	}
+	if value, ok := lookupEnvInt("MESSAGE_SHARE_ACCELERATED_DATA_PORT"); ok {
+		cfg.AcceleratedDataPort = value
+	}
+	if value, ok := lookupEnvBool("MESSAGE_SHARE_ACCELERATED_ENABLED"); ok {
+		cfg.AcceleratedEnabled = value
 	}
 	if value, ok := lookupEnvInt("MESSAGE_SHARE_DISCOVERY_UDP_PORT"); ok {
 		cfg.DiscoveryUDPPort = value
@@ -117,6 +127,19 @@ func lookupEnvInt(key string) (int, bool) {
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, false
+	}
+	return parsed, true
+}
+
+func lookupEnvBool(key string) (bool, bool) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return false, false
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, false
 	}
 	return parsed, true
 }

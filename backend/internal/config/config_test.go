@@ -15,6 +15,12 @@ func TestDefaultConfigUsesLocalhostAndFixedPorts(t *testing.T) {
 	if cfg.AgentTCPPort != 19090 {
 		t.Fatalf("expected tcp port 19090, got %d", cfg.AgentTCPPort)
 	}
+	if cfg.AcceleratedDataPort != 19092 {
+		t.Fatalf("expected accelerated data port 19092, got %d", cfg.AcceleratedDataPort)
+	}
+	if !cfg.AcceleratedEnabled {
+		t.Fatal("expected accelerated transfer to be enabled by default")
+	}
 	if cfg.DiscoveryUDPPort != 19091 {
 		t.Fatalf("expected discovery port 19091, got %d", cfg.DiscoveryUDPPort)
 	}
@@ -29,6 +35,8 @@ func TestDefaultConfigUsesLocalhostAndFixedPorts(t *testing.T) {
 func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
 	t.Setenv("MESSAGE_SHARE_LOCAL_API_ADDR", "127.0.0.1:52350")
 	t.Setenv("MESSAGE_SHARE_AGENT_TCP_PORT", "52351")
+	t.Setenv("MESSAGE_SHARE_ACCELERATED_DATA_PORT", "52353")
+	t.Setenv("MESSAGE_SHARE_ACCELERATED_ENABLED", "false")
 	t.Setenv("MESSAGE_SHARE_DISCOVERY_UDP_PORT", "52352")
 	t.Setenv("MESSAGE_SHARE_DISCOVERY_LISTEN_ADDR", "127.0.0.1:52352")
 	t.Setenv("MESSAGE_SHARE_DISCOVERY_BROADCAST_ADDR", "127.0.0.1:52362")
@@ -41,6 +49,12 @@ func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.AgentTCPPort != 52351 {
 		t.Fatalf("expected overridden tcp port, got %d", cfg.AgentTCPPort)
+	}
+	if cfg.AcceleratedDataPort != 52353 {
+		t.Fatalf("expected overridden accelerated data port, got %d", cfg.AcceleratedDataPort)
+	}
+	if cfg.AcceleratedEnabled {
+		t.Fatal("expected accelerated transfer to be disabled by override")
 	}
 	if cfg.DiscoveryUDPPort != 52352 {
 		t.Fatalf("expected overridden discovery port, got %d", cfg.DiscoveryUDPPort)

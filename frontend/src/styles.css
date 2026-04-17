@@ -499,6 +499,84 @@ button {
   gap: 18px;
 }
 
+.ms-accelerated-card {
+  padding: 18px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(244, 183, 103, 0.22), transparent 28%),
+    linear-gradient(145deg, rgba(255, 250, 243, 0.98), rgba(244, 249, 247, 0.95));
+  border: 1px solid rgba(13, 72, 66, 0.12);
+  box-shadow: 0 18px 42px rgba(11, 43, 36, 0.12);
+  display: grid;
+  gap: 16px;
+}
+
+.ms-accelerated-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.ms-accelerated-card__title {
+  margin: 6px 0 0;
+  font-size: 22px;
+  color: var(--ms-teal-deep);
+}
+
+.ms-accelerated-card__copy,
+.ms-accelerated-card__empty {
+  margin: 8px 0 0;
+  color: var(--ms-muted-strong);
+  line-height: 1.65;
+}
+
+.ms-local-file-card {
+  padding: 16px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(13, 72, 66, 0.1);
+  display: grid;
+  gap: 12px;
+}
+
+.ms-local-file-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.ms-local-file-card__label {
+  display: inline-block;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ms-muted);
+}
+
+.ms-local-file-card__name {
+  display: block;
+  margin-top: 6px;
+  font-size: 18px;
+  color: var(--ms-text);
+}
+
+.ms-local-file-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  color: var(--ms-muted);
+  font-size: 14px;
+}
+
+.ms-local-file-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .ms-transfer-banner {
   padding: 20px;
   border-radius: 32px;
@@ -1053,6 +1131,12 @@ button {
 
   .ms-button-row {
     flex-direction: column;
+  }
+
+  .ms-accelerated-card__header,
+  .ms-local-file-card__header,
+  .ms-local-file-card__actions {
+    display: grid;
   }
 
   .ms-button {

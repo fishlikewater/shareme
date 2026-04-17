@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   BootstrapSnapshot,
+  LocalFileSnapshot,
   MessageSnapshot,
   PairingSnapshot,
   TransferSnapshot,
@@ -22,6 +23,8 @@ export interface LocalApi {
   confirmPairing: (pairingId: string) => Promise<PairingSnapshot>;
   sendText: (peerDeviceId: string, body: string) => Promise<MessageSnapshot>;
   sendFile: (peerDeviceId: string, file: File) => Promise<TransferSnapshot>;
+  pickLocalFile: () => Promise<LocalFileSnapshot>;
+  sendAcceleratedFile: (peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>;
   subscribeEvents: (options: {
     lastEventSeq?: number;
     onEvent: (event: AgentEvent) => void;
@@ -85,13 +88,23 @@ export function createLocalApiClient(options: LocalApiClientOptions = {}): Local
         body: formData,
       });
       if (!response.ok) {
-        throw new Error(`send file failed: ${response.status}`);
+        throw new Error(await resolveErrorMessage(response, `send file failed: ${response.status}`));
       }
 
       return (await response.json()) as TransferSnapshot;
     },
+    async pickLocalFile() {
+      return postJSON<LocalFileSnapshot>(fetchImpl, `${baseUrl}/api/local-files/pick`);
+    },
+    async sendAcceleratedFile(peerDeviceId: string, localFileId: string) {
+      return postJSON<TransferSnapshot>(fetchImpl, `${baseUrl}/api/transfers/accelerated`, {
+        peerDeviceId,
+        localFileId,
+      });
+    },
     subscribeEvents({ lastEventSeq = 0, onEvent }) {
       let cursor = lastEventSeq;
+      const ignoredSockets = new WeakSet<EventSocketLike>();
       let socket = openSocket(cursor);
       let closedByUser = false;
       let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -108,9 +121,15 @@ export function createLocalApiClient(options: LocalApiClientOptions = {}): Local
           onEvent(data);
         };
         nextSocket.onclose = () => {
+          if (ignoredSockets.has(nextSocket) || socket !== nextSocket) {
+            return;
+          }
           scheduleReconnect();
         };
         nextSocket.onerror = () => {
+          if (ignoredSockets.has(nextSocket) || socket !== nextSocket) {
+            return;
+          }
           scheduleReconnect();
         };
         return nextSocket;
@@ -163,6 +182,7 @@ export function createLocalApiClient(options: LocalApiClientOptions = {}): Local
             window.clearTimeout(reconnectTimer);
             reconnectTimer = undefined;
           }
+          ignoredSockets.add(socket);
           socket.close();
           socket = openSocket(cursor);
         },
@@ -178,21 +198,29 @@ export function createLocalApi(options: LocalApiClientOptions = {}): LocalApi {
 async function postJSON<TResponse>(
   fetchImpl: typeof fetch,
   url: string,
-  payload: Record<string, unknown>,
+  payload?: Record<string, unknown>,
 ): Promise<TResponse> {
   const response = await fetchImpl(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: payload ? JSON.stringify(payload) : undefined,
   });
 
   if (!response.ok) {
-    throw new Error(`command failed: ${response.status}`);
+    throw new Error(await resolveErrorMessage(response, `command failed: ${response.status}`));
   }
 
   return (await response.json()) as TResponse;
+}
+
+async function resolveErrorMessage(response: Response, fallback: string): Promise<string> {
+  const text = (await response.text()).trim();
+  if (text.length > 0) {
+    return text;
+  }
+  return fallback;
 }
 
 function resolveRuntimeApiConfig(): { baseUrl: string; wsBaseUrl: string } {

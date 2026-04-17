@@ -3,7 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import type { LocalApi } from "./lib/api";
-import type { AgentEvent, BootstrapSnapshot, MessageSnapshot, PairingSnapshot, TransferSnapshot } from "./lib/types";
+import type {
+  AgentEvent,
+  BootstrapSnapshot,
+  LocalFileSnapshot,
+  MessageSnapshot,
+  PairingSnapshot,
+  TransferSnapshot,
+} from "./lib/types";
 
 function createApi(snapshot: BootstrapSnapshot): LocalApi {
   return {
@@ -12,6 +19,8 @@ function createApi(snapshot: BootstrapSnapshot): LocalApi {
     confirmPairing: vi.fn<(pairingId: string) => Promise<PairingSnapshot>>(),
     sendText: vi.fn<(peerDeviceId: string, body: string) => Promise<MessageSnapshot>>(),
     sendFile: vi.fn<(peerDeviceId: string, file: File) => Promise<TransferSnapshot>>(),
+    pickLocalFile: vi.fn<() => Promise<LocalFileSnapshot>>(),
+    sendAcceleratedFile: vi.fn<(peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>>(),
     subscribeEvents: vi.fn(
       (_options: { lastEventSeq?: number; onEvent: (event: AgentEvent) => void }) => ({
         close: vi.fn(),

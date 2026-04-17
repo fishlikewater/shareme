@@ -38,7 +38,7 @@ describe("FileMessageCard", () => {
     expect(screen.getByText("50%")).toBeInTheDocument();
     expect(screen.getByText("1 MB / 2 MB")).toBeInTheDocument();
     expect(screen.getByText("速率 500 KB/s")).toBeInTheDocument();
-    expect(screen.getByText("ETA 00:10")).toBeInTheDocument();
+    expect(screen.getByText("预计 10 秒")).toBeInTheDocument();
     expect(screen.getByText("传输中")).toBeInTheDocument();
   });
 
@@ -153,5 +153,22 @@ describe("FileMessageCard", () => {
     expect(screen.queryByText("0 B / 2 MB")).not.toBeInTheDocument();
     expect(screen.queryByText("速率 0 B/s")).not.toBeInTheDocument();
     expect(screen.getByText("传输中")).toBeInTheDocument();
+  });
+
+  it("极速回退时展示明确的回退提示", () => {
+    render(
+      <FileMessageCard
+        message={message}
+        transfer={{
+          ...transfer,
+          state: "fallback_transferring",
+          progressPercent: 0,
+          rateBytesPerSec: 0,
+          etaSeconds: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("已回退普通传输")).toBeInTheDocument();
   });
 });

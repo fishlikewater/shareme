@@ -23,13 +23,15 @@ export function FileMessageCard({ message, transfer }: FileMessageCardProps) {
         transfer?.fileSize ?? 0,
       )}`
     : null;
-  const rateLabel = hasTelemetry ? `速率 ${formatRate(transfer?.rateBytesPerSec ?? 0)}` : null;
+  const rateLabel =
+    hasTransfer && (transfer?.rateBytesPerSec ?? 0) > 0
+      ? `速率 ${formatRate(transfer?.rateBytesPerSec ?? 0)}`
+      : null;
   const etaLabel = formatEta(transfer?.etaSeconds, transferState);
   const stateLabel = formatTransferState(transferState);
-  const progressValueText =
-    hasTelemetry && ratio && rateLabel
-      ? formatProgressValueText(displayPercent, ratio, rateLabel, etaLabel, stateLabel)
-      : stateLabel;
+  const progressValueText = hasTelemetry
+    ? formatProgressValueText(displayPercent, ratio, rateLabel, etaLabel, stateLabel)
+    : stateLabel;
 
   return (
     <article className="ms-file-card">
@@ -55,13 +57,9 @@ export function FileMessageCard({ message, transfer }: FileMessageCardProps) {
         </div>
       ) : null}
       <div className="ms-file-card__meta">
-        {hasTransfer && hasTelemetry && ratio && rateLabel ? (
-          <>
-            <span>{ratio}</span>
-            <span>{rateLabel}</span>
-            {etaLabel ? <span>{etaLabel}</span> : null}
-          </>
-        ) : null}
+        {hasTransfer && hasTelemetry && ratio ? <span>{ratio}</span> : null}
+        {rateLabel ? <span>{rateLabel}</span> : null}
+        {etaLabel ? <span>{etaLabel}</span> : null}
         <span>{stateLabel}</span>
       </div>
     </article>
@@ -91,12 +89,18 @@ function formatDisplayPercent(value: number, state: string): number {
 
 function formatProgressValueText(
   percent: number,
-  ratio: string,
-  rateLabel: string,
+  ratio: string | null,
+  rateLabel: string | null,
   etaLabel: string | null,
   stateLabel: string,
 ): string {
-  const parts = [`已传输 ${percent}%`, ratio, rateLabel];
+  const parts = [`已传输 ${percent}%`];
+  if (ratio) {
+    parts.push(ratio);
+  }
+  if (rateLabel) {
+    parts.push(rateLabel);
+  }
   if (etaLabel) {
     parts.push(etaLabel);
   }
@@ -125,20 +129,41 @@ function formatRate(bytesPerSec: number): string {
 }
 
 function formatEta(seconds: number | null | undefined, state: string): string | null {
-  if (state === "done" || state === "failed") {
+  if (
+    state === "done" ||
+    state === "failed" ||
+    state === "received" ||
+    state === "sent" ||
+    state === "fallback_pending" ||
+    state === "fallback_transferring"
+  ) {
     return null;
   }
   if (!Number.isFinite(seconds) || seconds == null || seconds <= 0) {
     return null;
   }
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  const paddedSeconds = String(remainder).padStart(2, "0");
-  const paddedMinutes = String(minutes).padStart(2, "0");
-  return `ETA ${paddedMinutes}:${paddedSeconds}`;
+  const roundedSeconds = Math.max(1, Math.round(seconds));
+  const minutes = Math.floor(roundedSeconds / 60);
+  const remainder = roundedSeconds % 60;
+  if (minutes === 0) {
+    return `预计 ${roundedSeconds} 秒`;
+  }
+  if (remainder === 0) {
+    return `预计 ${minutes} 分钟`;
+  }
+  return `预计 ${minutes} 分 ${remainder} 秒`;
 }
 
 function formatTransferState(state: string): string {
+  if (state === "preparing") {
+    return "准备极速传输";
+  }
+  if (state === "fallback_pending") {
+    return "准备回退普通传输";
+  }
+  if (state === "fallback_transferring") {
+    return "已回退普通传输";
+  }
   if (state === "receiving") {
     return "接收中";
   }
@@ -195,7 +220,14 @@ function hasTransferTelemetry(transfer: TransferSnapshot | undefined, state: str
   if (!transfer) {
     return false;
   }
-  if (state === "done" || state === "received" || state === "sent" || state === "failed") {
+  if (
+    state === "done" ||
+    state === "received" ||
+    state === "sent" ||
+    state === "failed" ||
+    state === "fallback_pending" ||
+    state === "fallback_transferring"
+  ) {
     return true;
   }
   return transfer.bytesTransferred > 0 || transfer.progressPercent > 0 || transfer.rateBytesPerSec > 0;

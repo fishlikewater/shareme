@@ -37,6 +37,12 @@ try {
     Push-Location $frontendDir
     try {
         $env:npm_config_cache = $npmCacheDir
+        npm ci
+
+        if ($LASTEXITCODE -ne 0) {
+            throw ("前端依赖安装失败，退出码：{0}" -f $LASTEXITCODE)
+        }
+
         npm test
 
         if ($LASTEXITCODE -ne 0) {

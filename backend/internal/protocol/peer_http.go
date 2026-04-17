@@ -239,6 +239,30 @@ func (t *HTTPPeerTransport) CompleteTransferSession(
 	return response, nil
 }
 
+func (t *HTTPPeerTransport) PrepareAcceleratedTransfer(
+	ctx context.Context,
+	peer discovery.PeerRecord,
+	request AcceleratedPrepareRequest,
+) (AcceleratedPrepareResponse, error) {
+	var response AcceleratedPrepareResponse
+	if err := t.postJSON(ctx, t.httpClient(peer), peerURL(t.scheme, peer.LastKnownAddr, "/peer/transfers/accelerated/prepare"), request, &response); err != nil {
+		return AcceleratedPrepareResponse{}, err
+	}
+	return response, nil
+}
+
+func (t *HTTPPeerTransport) CompleteAcceleratedTransfer(
+	ctx context.Context,
+	peer discovery.PeerRecord,
+	request AcceleratedCompleteRequest,
+) (AcceleratedCompleteResponse, error) {
+	var response AcceleratedCompleteResponse
+	if err := t.postJSON(ctx, t.httpClient(peer), peerURL(t.scheme, peer.LastKnownAddr, "/peer/transfers/accelerated/complete"), request, &response); err != nil {
+		return AcceleratedCompleteResponse{}, err
+	}
+	return response, nil
+}
+
 func (t *HTTPPeerTransport) postJSON(ctx context.Context, client *http.Client, url string, payload any, dest any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -421,6 +445,14 @@ func NewPeerHTTPServer(handler PairingHandler) http.Handler {
 	var authorizer PeerRequestAuthorizer
 	if value, ok := handler.(PeerRequestAuthorizer); ok {
 		authorizer = value
+	}
+	var acceleratedAuthorizer AcceleratedTransferAuthorizer
+	if value, ok := handler.(AcceleratedTransferAuthorizer); ok {
+		acceleratedAuthorizer = value
+	}
+	var acceleratedHandler AcceleratedTransferHandler
+	if value, ok := handler.(AcceleratedTransferHandler); ok {
+		acceleratedHandler = value
 	}
 	var heartbeatHandler HeartbeatHandler
 	if value, ok := handler.(HeartbeatHandler); ok {
@@ -653,6 +685,82 @@ func NewPeerHTTPServer(handler PairingHandler) http.Handler {
 		}
 
 		response, err := transferSessionHandler.CompleteIncomingTransferSession(ctx, request)
+		if err != nil {
+			writePeerError(w, err)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	mux.HandleFunc("/peer/transfers/accelerated/prepare", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if acceleratedHandler == nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		caller, err := peerCallerFromRequest(r)
+		if err != nil {
+			writePeerError(w, err)
+			return
+		}
+		ctx := ContextWithPeerCaller(r.Context(), caller)
+
+		var request AcceleratedPrepareRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if acceleratedAuthorizer != nil {
+			if err := acceleratedAuthorizer.AuthorizeAcceleratedPrepare(ctx, request, caller); err != nil {
+				writePeerError(w, err)
+				return
+			}
+		}
+
+		response, err := acceleratedHandler.PrepareAcceleratedTransfer(ctx, request)
+		if err != nil {
+			writePeerError(w, err)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	mux.HandleFunc("/peer/transfers/accelerated/complete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if acceleratedHandler == nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		caller, err := peerCallerFromRequest(r)
+		if err != nil {
+			writePeerError(w, err)
+			return
+		}
+		ctx := ContextWithPeerCaller(r.Context(), caller)
+
+		var request AcceleratedCompleteRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if acceleratedAuthorizer != nil {
+			if err := acceleratedAuthorizer.AuthorizeAcceleratedComplete(ctx, request, caller); err != nil {
+				writePeerError(w, err)
+				return
+			}
+		}
+
+		response, err := acceleratedHandler.CompleteAcceleratedTransfer(ctx, request)
 		if err != nil {
 			writePeerError(w, err)
 			return

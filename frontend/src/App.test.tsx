@@ -6,6 +6,7 @@ import type { LocalApi } from "./lib/api";
 import type {
   AgentEvent,
   BootstrapSnapshot,
+  LocalFileSnapshot,
   MessageSnapshot,
   PairingSnapshot,
   TransferSnapshot,
@@ -17,6 +18,8 @@ class FakeApi implements LocalApi {
   readonly confirmedPairings: string[] = [];
   readonly sentTexts: Array<{ peerDeviceId: string; body: string }> = [];
   readonly sentFiles: Array<{ peerDeviceId: string; file: File }> = [];
+  readonly pickedLocalFiles: number[] = [];
+  readonly sentAcceleratedFiles: Array<{ peerDeviceId: string; localFileId: string }> = [];
 
   constructor(private readonly snapshot: BootstrapSnapshot) {}
 
@@ -74,6 +77,34 @@ class FakeApi implements LocalApi {
       rateBytesPerSec: 0,
       etaSeconds: 0,
       active: false,
+    };
+  }
+
+  async pickLocalFile(): Promise<LocalFileSnapshot> {
+    this.pickedLocalFiles.push(Date.now());
+    return {
+      localFileId: "lf-1",
+      displayName: "archive.iso",
+      size: 3_221_225_472,
+      acceleratedEligible: true,
+    };
+  }
+
+  async sendAcceleratedFile(peerDeviceId: string, localFileId: string): Promise<TransferSnapshot> {
+    this.sentAcceleratedFiles.push({ peerDeviceId, localFileId });
+    return {
+      transferId: "transfer-accelerated-1",
+      messageId: "msg-accelerated-1",
+      fileName: "archive.iso",
+      fileSize: 3_221_225_472,
+      state: "preparing",
+      createdAt: "2026-04-16T09:00:00Z",
+      direction: "outgoing",
+      bytesTransferred: 0,
+      progressPercent: 0,
+      rateBytesPerSec: 0,
+      etaSeconds: null,
+      active: true,
     };
   }
 
@@ -278,6 +309,63 @@ describe("App", () => {
     });
   });
 
+  it("可以选择本地大文件并发起极速发送", async () => {
+    const api = new FakeApi(bootstrapSnapshot);
+
+    render(<App api={api} />);
+    expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /办公室副机/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "极速发送大文件" }));
+
+    await waitFor(() => {
+      expect(api.pickedLocalFiles).toHaveLength(1);
+    });
+
+    expect(screen.getByText("已选本地文件")).toBeInTheDocument();
+    expect(screen.getByText("archive.iso")).toBeInTheDocument();
+    expect(screen.getByText("满足极速条件")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "发送已选大文件" }));
+
+    await waitFor(() => {
+      expect(api.sentAcceleratedFiles).toEqual([
+        { peerDeviceId: "peer-1", localFileId: "lf-1" },
+      ]);
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("archive.iso").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("本地 agent 选中的非极速文件也可以继续走普通文件发送闭环", async () => {
+    const api = new FakeApi(bootstrapSnapshot);
+    vi.spyOn(api, "pickLocalFile").mockResolvedValue({
+      localFileId: "lf-small",
+      displayName: "notes.txt",
+      size: 1024,
+      acceleratedEligible: false,
+    });
+
+    render(<App api={api} />);
+    expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /办公室副机/ }));
+    fireEvent.click(screen.getByRole("button", { name: "极速发送大文件" }));
+
+    expect(await screen.findByText("已选本地文件")).toBeInTheDocument();
+    expect(screen.getByText("当前文件会继续走普通文件传输")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "发送已选文件" }));
+
+    await waitFor(() => {
+      expect(api.sentAcceleratedFiles).toEqual([
+        { peerDeviceId: "peer-1", localFileId: "lf-small" },
+      ]);
+    });
+  });
+
   it("bootstrap 失败时显示明确的连接错误页", async () => {
     const api: LocalApi = {
       bootstrap: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
@@ -285,6 +373,8 @@ describe("App", () => {
       confirmPairing: vi.fn(),
       sendText: vi.fn(),
       sendFile: vi.fn(),
+      pickLocalFile: vi.fn(),
+      sendAcceleratedFile: vi.fn(),
       subscribeEvents: vi.fn(() => ({
         close: vi.fn(),
         reconnect: vi.fn(),
@@ -307,6 +397,32 @@ describe("App", () => {
     expect(within(banner).getByText("demo.pdf")).toBeInTheDocument();
     expect(within(banner).getByText("50%")).toBeInTheDocument();
     expect(within(banner).getByText("发送")).toBeInTheDocument();
-    expect(within(banner).getByText("ETA 00:04")).toBeInTheDocument();
+    expect(within(banner).getByText("预计 4 秒")).toBeInTheDocument();
+  });
+
+  it("极速传输回退事件会更新现有记录并提示正在回退普通传输", async () => {
+    const api = new FakeApi(bootstrapSnapshotWithActiveTransfer);
+
+    render(<App api={api} />);
+
+    expect(await screen.findByLabelText("传输横幅")).toBeInTheDocument();
+    expect(screen.getAllByText("demo.pdf")).toHaveLength(2);
+
+    act(() => {
+      api.emit({
+        eventSeq: 10,
+        kind: "transfer.updated",
+        payload: {
+          ...activeTransferSnapshot,
+          state: "fallback_pending",
+          progressPercent: 50,
+          rateBytesPerSec: 0,
+          etaSeconds: null,
+        },
+      });
+    });
+
+    expect(screen.getAllByText("准备回退普通传输").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("demo.pdf")).toHaveLength(2);
   });
 });

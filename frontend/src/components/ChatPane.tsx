@@ -1,15 +1,20 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { FileMessageCard } from "./FileMessageCard";
-import type { ConversationMessage, PeerSummary } from "../lib/types";
+import type { ConversationMessage, LocalFileSnapshot, PeerSummary } from "../lib/types";
 
 type ChatPaneProps = {
   peer?: PeerSummary;
   messages: ConversationMessage[];
   sendingText: boolean;
   sendingFile: boolean;
+  pickingLocalFile: boolean;
+  sendingAcceleratedFile: boolean;
+  pickedLocalFile: LocalFileSnapshot | null;
   onSendText: (body: string) => Promise<void>;
   onSendFile: (file: File) => Promise<void>;
+  onPickLocalFile: () => Promise<void>;
+  onSendAcceleratedFile: () => Promise<void>;
 };
 
 export function ChatPane({
@@ -17,8 +22,13 @@ export function ChatPane({
   messages,
   sendingText,
   sendingFile,
+  pickingLocalFile,
+  sendingAcceleratedFile,
+  pickedLocalFile,
   onSendText,
   onSendFile,
+  onPickLocalFile,
+  onSendAcceleratedFile,
 }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,13 +55,28 @@ export function ChatPane({
   }
 
   function handlePickFile() {
-    if (sendingFile) {
+    if (sendingFile || pickingLocalFile || sendingAcceleratedFile) {
       return;
     }
     fileInputRef.current?.click();
   }
 
+  async function handlePickLocalFile() {
+    if (sendingFile || pickingLocalFile || sendingAcceleratedFile) {
+      return;
+    }
+    await onPickLocalFile();
+  }
+
+  async function handleSendPickedLocalFile() {
+    if (!pickedLocalFile || sendingAcceleratedFile) {
+      return;
+    }
+    await onSendAcceleratedFile();
+  }
+
   const canSend = Boolean(peer?.trusted && peer.reachable);
+  const acceleratedBusy = pickingLocalFile || sendingAcceleratedFile;
 
   return (
     <section className="ms-panel ms-chat-panel">
@@ -59,7 +84,7 @@ export function ChatPane({
         <div>
           <span className="ms-eyebrow">沟通中心</span>
           <h2 className="ms-chat-title">
-            {peer ? `连接 ${peer.deviceName}` : "请选择一个可信设备开始交流"}
+            {peer ? `连接 ${peer.deviceName}` : "请选择一台设备开始传输"}
           </h2>
           <p className="ms-chat-copy">{resolveChatCopy(peer)}</p>
         </div>
@@ -79,51 +104,119 @@ export function ChatPane({
         <section className="ms-workspace-empty">
           <div className="ms-workspace-empty__hero">
             <span className="ms-chip ms-chip--soft">等待设备</span>
-            <strong>需要一个伙伴来开启共享旅程</strong>
-            <p>在左侧列表中选择设备，完成验证后即可互传文本和文件。</p>
+            <strong>先选一台设备，再开始点对点传输</strong>
+            <p>在左侧列表中选择设备，完成配对后即可互传文字与文件。</p>
           </div>
           <div className="ms-workspace-steps" aria-label="快速引导">
             <div className="ms-workspace-step">
               <span className="ms-workspace-step__index">1</span>
               <div>
                 <strong>选择设备</strong>
-                <p>点击目标设备卡片，查看详情并发起连接。</p>
+                <p>点击目标设备卡片，确认它是否在线并可直连。</p>
               </div>
             </div>
             <div className="ms-workspace-step">
               <span className="ms-workspace-step__index">2</span>
               <div>
                 <strong>确认配对</strong>
-                <p>输入配对码或接受邀请，完成设备信任流程。</p>
+                <p>对照短码建立信任，后续就能重复使用。</p>
               </div>
             </div>
             <div className="ms-workspace-step">
               <span className="ms-workspace-step__index">3</span>
               <div>
                 <strong>开始传输</strong>
-                <p>文字、图片与文件都可以轻松分享。</p>
+                <p>文字、小文件和大文件都能直接发送。</p>
               </div>
             </div>
           </div>
         </section>
       ) : null}
       {peer && !peer.trusted ? (
-        <div className="ms-chat-blocker">尚未完成信任，请先授权后再传输内容。</div>
+        <div className="ms-chat-blocker">尚未完成信任，暂不可发送内容。</div>
       ) : null}
       {peer && peer.trusted && !peer.reachable ? (
-        <div className="ms-chat-blocker">当前设备暂时无法访问，请稍后重试。</div>
+        <div className="ms-chat-blocker">当前设备暂时不可达，请稍后重试。</div>
       ) : null}
 
       {canSend ? (
         <>
           <div className="ms-section-head">
             <span className="ms-section-title">实时沟通</span>
-            <span className="ms-section-hint">可发送文本与文件</span>
+            <span className="ms-section-hint">可以开始发送文字、图片以外的任意文件</span>
           </div>
+
+          <section className="ms-accelerated-card">
+            <div className="ms-accelerated-card__header">
+              <div>
+                <span className="ms-eyebrow">极速路径</span>
+                <h3 className="ms-accelerated-card__title">大文件直读本地磁盘</h3>
+                <p className="ms-accelerated-card__copy">
+                  由本机 agent 直接读取磁盘文件，减少浏览器中转和重复落盘。
+                </p>
+              </div>
+              <button
+                className="ms-button ms-button--secondary"
+                disabled={acceleratedBusy}
+                onClick={() => {
+                  void handlePickLocalFile();
+                }}
+                type="button"
+              >
+                {pickingLocalFile ? "选择中..." : "极速发送大文件"}
+              </button>
+            </div>
+
+            {pickedLocalFile ? (
+              <div className="ms-local-file-card">
+                <div className="ms-local-file-card__header">
+                  <div>
+                    <span className="ms-local-file-card__label">已选本地文件</span>
+                    <strong className="ms-local-file-card__name">{pickedLocalFile.displayName}</strong>
+                  </div>
+                  <span
+                    className={`ms-badge ${
+                      pickedLocalFile.acceleratedEligible ? "ms-badge--ok" : "ms-badge--warn"
+                    }`}
+                  >
+                    {pickedLocalFile.acceleratedEligible ? "满足极速条件" : "不满足极速条件"}
+                  </span>
+                </div>
+                <div className="ms-local-file-card__meta">
+                  <span>{formatFileSize(pickedLocalFile.size)}</span>
+                  <span>
+                    {pickedLocalFile.acceleratedEligible
+                      ? "将优先走高速数据面"
+                      : "当前文件会继续走普通文件传输"}
+                  </span>
+                </div>
+                <div className="ms-local-file-card__actions">
+                  <button
+                    className="ms-button ms-button--primary"
+                    disabled={sendingAcceleratedFile}
+                    onClick={() => {
+                      void handleSendPickedLocalFile();
+                    }}
+                    type="button"
+                  >
+                    {sendingAcceleratedFile
+                      ? "发送中..."
+                      : pickedLocalFile.acceleratedEligible
+                        ? "发送已选大文件"
+                        : "发送已选文件"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="ms-accelerated-card__empty">
+                选择一个本地大文件后，这里会展示极速发送资格与发送入口。
+              </div>
+            )}
+          </section>
 
           <div className="ms-message-list">
             {messages.length === 0 ? (
-              <div className="ms-empty-card">还没有消息，快来发送第一条吧。</div>
+              <div className="ms-empty-card">还没有消息，先发一条试试看。</div>
             ) : null}
 
             {messages.map((message) => {
@@ -161,7 +254,7 @@ export function ChatPane({
               className="ms-textarea"
               disabled={sendingText}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="输入消息或者点击下方按钮选择文件"
+              placeholder="输入一条消息，或直接发送文件"
               rows={4}
               value={draft}
             />
@@ -171,7 +264,7 @@ export function ChatPane({
               </button>
               <button
                 className="ms-button ms-button--secondary"
-                disabled={sendingFile}
+                disabled={sendingFile || pickingLocalFile || sendingAcceleratedFile}
                 onClick={handlePickFile}
                 type="button"
               >
@@ -182,7 +275,7 @@ export function ChatPane({
                 ref={fileInputRef}
                 className="ms-visually-hidden"
                 data-testid="file-input"
-                disabled={sendingFile}
+                disabled={sendingFile || pickingLocalFile || sendingAcceleratedFile}
                 onChange={handleFileChange}
                 tabIndex={-1}
                 type="file"
@@ -197,15 +290,15 @@ export function ChatPane({
 
 function resolveChatCopy(peer?: PeerSummary): string {
   if (!peer) {
-    return "请选择一个设备，在列表中查看状态并建立连接。";
+    return "请选择一台设备，在列表中查看状态并建立连接。";
   }
   if (!peer.trusted) {
-    return "此设备暂未信任，完成配对后才可安全通讯。";
+    return "完成配对后即可安全通讯。";
   }
   if (!peer.reachable) {
-    return "设备已信任但当前不可达，请稍后重试。";
+    return "设备已信任，但当前不可达，请稍后重试。";
   }
-  return "连接准备就绪，开始发送文本或文件吧。";
+  return "可以开始发送文字、图片以外的任意文件";
 }
 
 function formatMessageState(status: string): string {
@@ -230,4 +323,17 @@ function formatMessageTime(value: string): string {
     month: "numeric",
     day: "numeric",
   }).format(new Date(timestamp));
+}
+
+function formatFileSize(fileSize: number): string {
+  if (fileSize >= 1024 * 1024 * 1024) {
+    return `${Math.max(1, Math.round((fileSize / (1024 * 1024 * 1024)) * 10) / 10)} GB`;
+  }
+  if (fileSize >= 1024 * 1024) {
+    return `${Math.max(1, Math.round(fileSize / (1024 * 1024)))} MB`;
+  }
+  if (fileSize >= 1024) {
+    return `${Math.max(1, Math.round(fileSize / 1024))} KB`;
+  }
+  return `${fileSize} B`;
 }

@@ -10,6 +10,7 @@ import type {
   BootstrapSnapshot,
   ConversationMessage,
   ConversationSnapshot,
+  LocalFileSnapshot,
   MessageSnapshot,
   PairingSnapshot,
   PeerSnapshot,
@@ -27,6 +28,8 @@ type BusyState = {
   confirmingPairing: boolean;
   sendingText: boolean;
   sendingFile: boolean;
+  pickingLocalFile: boolean;
+  sendingAcceleratedFile: boolean;
 };
 
 const initialBusyState: BusyState = {
@@ -34,6 +37,8 @@ const initialBusyState: BusyState = {
   confirmingPairing: false,
   sendingText: false,
   sendingFile: false,
+  pickingLocalFile: false,
+  sendingAcceleratedFile: false,
 };
 
 const SNAPSHOT_REFRESH_INTERVAL_MS = 3000;
@@ -47,6 +52,7 @@ export default function AppShell({ api }: AppProps) {
   const [errorMessage, setErrorMessage] = useState<string>();
   const [commandError, setCommandError] = useState<string>();
   const [busyState, setBusyState] = useState<BusyState>(initialBusyState);
+  const [pickedLocalFile, setPickedLocalFile] = useState<LocalFileSnapshot | null>(null);
 
   useEffect(() => {
     let subscription: ReturnType<LocalApi["subscribeEvents"]> | undefined;
@@ -198,6 +204,45 @@ export default function AppShell({ api }: AppProps) {
     }
   }
 
+  async function handlePickLocalFile() {
+    if (!selectedPeer) {
+      return;
+    }
+
+    setCommandError(undefined);
+    setBusyState((current) => ({ ...current, pickingLocalFile: true }));
+    try {
+      const localFile = await resolvedApi.pickLocalFile();
+      setPickedLocalFile(localFile);
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : "pick local file failed");
+    } finally {
+      setBusyState((current) => ({ ...current, pickingLocalFile: false }));
+    }
+  }
+
+  async function handleSendAcceleratedFile() {
+    if (!selectedPeer || !pickedLocalFile) {
+      return;
+    }
+
+    setCommandError(undefined);
+    setBusyState((current) => ({ ...current, sendingAcceleratedFile: true }));
+    try {
+      const transfer = await resolvedApi.sendAcceleratedFile(selectedPeer.deviceId, pickedLocalFile.localFileId);
+      startTransition(() => {
+        setSnapshot((current) =>
+          current ? upsertOutgoingPickedFile(current, selectedPeer.deviceId, pickedLocalFile, transfer) : current,
+        );
+      });
+      setPickedLocalFile(null);
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : "accelerated send failed");
+    } finally {
+      setBusyState((current) => ({ ...current, sendingAcceleratedFile: false }));
+    }
+  }
+
   if (errorMessage) {
     return (
       <main className="ms-app">
@@ -233,6 +278,7 @@ export default function AppShell({ api }: AppProps) {
 
   function handleSelectPeer(peer: PeerSummary) {
     setSelectedPeerId(peer.deviceId);
+    setPickedLocalFile(null);
     if (
       typeof window !== "undefined" &&
       typeof window.matchMedia === "function" &&
@@ -307,8 +353,13 @@ export default function AppShell({ api }: AppProps) {
               messages={selectedMessages}
               sendingText={busyState.sendingText}
               sendingFile={busyState.sendingFile}
+              pickingLocalFile={busyState.pickingLocalFile}
+              sendingAcceleratedFile={busyState.sendingAcceleratedFile}
+              pickedLocalFile={pickedLocalFile}
               onSendText={handleSendText}
               onSendFile={handleSendFile}
+              onPickLocalFile={handlePickLocalFile}
+              onSendAcceleratedFile={handleSendAcceleratedFile}
             />
             <PairCodeDialog
               peer={selectedPeer}
@@ -406,7 +457,9 @@ function buildPeerSummaries(snapshot: BootstrapSnapshot): PeerSummary[] {
   return [...snapshot.peers]
     .map((peer) => {
       const conversation = conversationsByPeer.get(peer.deviceId);
-      const preview = conversation ? latestMessages.get(conversation.conversationId)?.body : undefined;
+      const preview = conversation
+        ? formatPeerPreview(latestMessages.get(conversation.conversationId))
+        : undefined;
 
       return {
         ...peer,
@@ -421,6 +474,16 @@ function buildPeerSummaries(snapshot: BootstrapSnapshot): PeerSummary[] {
       }
       return left.deviceName.localeCompare(right.deviceName, "zh-CN");
     });
+}
+
+function formatPeerPreview(message?: MessageSnapshot): string | undefined {
+  if (!message) {
+    return undefined;
+  }
+  if (message.kind === "file") {
+    return message.direction === "incoming" ? "收到一个文件" : "发送了一个文件";
+  }
+  return message.body;
 }
 
 function pairingPriority(status: string): number {
@@ -590,6 +653,27 @@ function upsertOutgoingFile(
     direction: "outgoing",
     kind: "file",
     body: transfer.fileName || file.name,
+    status: transfer.state === "done" ? "sent" : transfer.state,
+    createdAt: transfer.createdAt,
+  });
+}
+
+function upsertOutgoingPickedFile(
+  snapshot: BootstrapSnapshot,
+  peerDeviceId: string,
+  pickedLocalFile: LocalFileSnapshot,
+  transfer: TransferSnapshot,
+): BootstrapSnapshot {
+  const conversationId = resolveConversationId(snapshot, peerDeviceId) ?? `conv-${peerDeviceId}`;
+  const nextSnapshot = ensureConversation(snapshot, peerDeviceId, conversationId);
+  const withTransfer = upsertTransfer(nextSnapshot, transfer);
+
+  return upsertMessage(withTransfer, {
+    messageId: transfer.messageId,
+    conversationId,
+    direction: "outgoing",
+    kind: "file",
+    body: transfer.fileName || pickedLocalFile.displayName,
     status: transfer.state === "done" ? "sent" : transfer.state,
     createdAt: transfer.createdAt,
   });

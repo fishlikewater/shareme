@@ -19,6 +19,7 @@ import (
 	"message-share/backend/internal/diagnostics"
 	"message-share/backend/internal/discovery"
 	"message-share/backend/internal/domain"
+	"message-share/backend/internal/localfile"
 	"message-share/backend/internal/protocol"
 	"message-share/backend/internal/security"
 	"message-share/backend/internal/session"
@@ -117,6 +118,8 @@ type Service interface {
 	ConfirmPairing(ctx context.Context, pairingID string) (PairingSnapshot, error)
 	SendTextMessage(ctx context.Context, peerDeviceID string, body string) (MessageSnapshot, error)
 	SendFile(ctx context.Context, peerDeviceID string, fileName string, fileSize int64, content io.Reader) (TransferSnapshot, error)
+	PickLocalFile(ctx context.Context) (LocalFileSnapshot, error)
+	SendAcceleratedFile(ctx context.Context, peerDeviceID string, localFileID string) (TransferSnapshot, error)
 }
 
 type EventPublisher interface {
@@ -146,13 +149,16 @@ type PeerTransport interface {
 }
 
 type RuntimeDeps struct {
-	Config    config.AppConfig
-	Store     Store
-	Discovery *discovery.Registry
-	Pairings  PairingManager
-	Events    EventPublisher
-	Transport PeerTransport
-	Transfers *transfer.Registry
+	Config                   config.AppConfig
+	Store                    Store
+	Discovery                *discovery.Registry
+	Pairings                 PairingManager
+	Events                   EventPublisher
+	Transport                PeerTransport
+	Transfers                *transfer.Registry
+	LocalFiles               LocalFileResolver
+	AcceleratedSessions      AcceleratedSessionRegistrar
+	AcceleratedSenderFactory AcceleratedSenderFactory
 
 	HeartbeatInterval              time.Duration
 	HeartbeatTimeout               time.Duration
@@ -161,13 +167,16 @@ type RuntimeDeps struct {
 }
 
 type RuntimeService struct {
-	cfg       config.AppConfig
-	store     Store
-	discovery *discovery.Registry
-	pairings  PairingManager
-	events    EventPublisher
-	transport PeerTransport
-	transfers *transfer.Registry
+	cfg                      config.AppConfig
+	store                    Store
+	discovery                *discovery.Registry
+	pairings                 PairingManager
+	events                   EventPublisher
+	transport                PeerTransport
+	transfers                *transfer.Registry
+	localFiles               LocalFileResolver
+	acceleratedSessions      AcceleratedSessionRegistrar
+	acceleratedSenderFactory AcceleratedSenderFactory
 
 	heartbeatInterval              time.Duration
 	heartbeatTimeout               time.Duration
@@ -179,8 +188,10 @@ type RuntimeService struct {
 	overrideMu sync.RWMutex
 	overrides  map[string]domain.Transfer
 
-	sessionMu               sync.RWMutex
-	incomingTransferSession map[string]*incomingTransferSession
+	sessionMu                  sync.RWMutex
+	incomingTransferSession    map[string]*incomingTransferSession
+	acceleratedMu              sync.RWMutex
+	incomingAcceleratedSession map[string]*incomingAcceleratedSession
 }
 
 type incomingTransferSession struct {
@@ -227,6 +238,9 @@ func NewRuntimeService(deps RuntimeDeps) *RuntimeService {
 	if deps.IncomingTransferSessionTimeout <= 0 {
 		deps.IncomingTransferSessionTimeout = defaultIncomingTransferSessionTimeout
 	}
+	if deps.AcceleratedSenderFactory == nil {
+		deps.AcceleratedSenderFactory = newDefaultAcceleratedSender
+	}
 
 	return &RuntimeService{
 		cfg:                            deps.Config,
@@ -236,6 +250,9 @@ func NewRuntimeService(deps RuntimeDeps) *RuntimeService {
 		events:                         deps.Events,
 		transport:                      deps.Transport,
 		transfers:                      deps.Transfers,
+		localFiles:                     deps.LocalFiles,
+		acceleratedSessions:            deps.AcceleratedSessions,
+		acceleratedSenderFactory:       deps.AcceleratedSenderFactory,
 		heartbeatInterval:              deps.HeartbeatInterval,
 		heartbeatTimeout:               deps.HeartbeatTimeout,
 		heartbeatFailureThreshold:      deps.HeartbeatFailureThreshold,
@@ -243,7 +260,15 @@ func NewRuntimeService(deps RuntimeDeps) *RuntimeService {
 		heartbeatFailures:              make(map[string]int),
 		overrides:                      make(map[string]domain.Transfer),
 		incomingTransferSession:        make(map[string]*incomingTransferSession),
+		incomingAcceleratedSession:     make(map[string]*incomingAcceleratedSession),
 	}
+}
+
+func (s *RuntimeService) ResolveLocalFile(localFileID string) (localfile.Lease, error) {
+	if s.localFiles == nil {
+		return localfile.Lease{}, fmt.Errorf("local file picker not configured")
+	}
+	return s.localFiles.Resolve(localFileID)
 }
 
 func (s *RuntimeService) Bootstrap() (BootstrapSnapshot, error) {
@@ -836,11 +861,6 @@ func (s *RuntimeService) AcceptIncomingFileTransfer(
 
 	s.markPeerDirectActive(ctx, request.SenderDeviceID, request.AgentTCPPort)
 
-	conversation, err := s.store.EnsureConversation(request.SenderDeviceID)
-	if err != nil {
-		return protocol.FileTransferResponse{}, fmt.Errorf("ensure conversation: %w", err)
-	}
-
 	createdAt := time.Now().UTC()
 	if request.CreatedAtRFC3339 != "" {
 		parsed, err := time.Parse(time.RFC3339Nano, request.CreatedAtRFC3339)
@@ -865,32 +885,55 @@ func (s *RuntimeService) AcceptIncomingFileTransfer(
 		transferID = newRandomID("transfer")
 	}
 
-	message := domain.Message{
-		MessageID:      messageID,
-		ConversationID: conversation.ConversationID,
-		Direction:      "incoming",
-		Kind:           "file",
-		Body:           filepath.Base(request.FileName),
-		Status:         "sent",
-		CreatedAt:      createdAt,
-	}
-	transferRecord := domain.Transfer{
-		TransferID:       transferID,
-		MessageID:        messageID,
-		FileName:         filepath.Base(request.FileName),
-		FileSize:         request.FileSize,
-		State:            transfer.StateReceiving,
-		Direction:        "incoming",
-		BytesTransferred: 0,
-		CreatedAt:        createdAt,
+	reusedAcceleratedSession, reusedAccelerated := s.takeIncomingAcceleratedSessionByTransferID(transferID)
+	if reusedAccelerated {
+		_ = reusedAcceleratedSession.receiver.Cleanup()
+		s.transfers.Finish(reusedAcceleratedSession.transferRecord.TransferID)
 	}
 
-	if err := s.store.SaveMessageWithTransfer(message, transferRecord); err != nil {
-		return protocol.FileTransferResponse{}, fmt.Errorf("save incoming file payload: %w", err)
-	}
+	transferRecord := domain.Transfer{}
+	if reusedAccelerated {
+		transferRecord = reusedAcceleratedSession.transferRecord
+		transferRecord.State = transfer.StateReceiving
+		transferRecord.FileName = filepath.Base(request.FileName)
+		transferRecord.FileSize = request.FileSize
+		transferRecord.BytesTransferred = 0
+		transferRecord.CreatedAt = createdAt
+		messageID = transferRecord.MessageID
+		transferID = transferRecord.TransferID
+	} else {
+		conversation, err := s.store.EnsureConversation(request.SenderDeviceID)
+		if err != nil {
+			return protocol.FileTransferResponse{}, fmt.Errorf("ensure conversation: %w", err)
+		}
 
-	s.publishMessageEvent(message)
-	s.publishTransferEvent(transferRecord)
+		message := domain.Message{
+			MessageID:      messageID,
+			ConversationID: conversation.ConversationID,
+			Direction:      "incoming",
+			Kind:           "file",
+			Body:           filepath.Base(request.FileName),
+			Status:         "sent",
+			CreatedAt:      createdAt,
+		}
+		transferRecord = domain.Transfer{
+			TransferID:       transferID,
+			MessageID:        messageID,
+			FileName:         filepath.Base(request.FileName),
+			FileSize:         request.FileSize,
+			State:            transfer.StateReceiving,
+			Direction:        "incoming",
+			BytesTransferred: 0,
+			CreatedAt:        createdAt,
+		}
+
+		if err := s.store.SaveMessageWithTransfer(message, transferRecord); err != nil {
+			return protocol.FileTransferResponse{}, fmt.Errorf("save incoming file payload: %w", err)
+		}
+
+		s.publishMessageEvent(message)
+		s.publishTransferEvent(transferRecord)
+	}
 
 	telemetry := s.transfers.Start(
 		transferRecord.TransferID,

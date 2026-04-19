@@ -15,7 +15,7 @@ export function HealthBanner({ health, lastEventSeq }: HealthBannerProps) {
         </div>
         <div className="ms-health__chips">
           <span className="ms-chip ms-chip--soft">自动发现 {resolveDiscoveryLabel(health.discovery)}</span>
-          <span className="ms-chip ms-chip--soft">代理端口 {health.agentPort ?? 19090}</span>
+          <span className="ms-chip ms-chip--soft">监听端口 {health.agentPort ?? 19090}</span>
           <span className="ms-chip ms-chip--soft">事件序号 {lastEventSeq}</span>
         </div>
       </div>
@@ -27,7 +27,7 @@ export function HealthBanner({ health, lastEventSeq }: HealthBannerProps) {
           ))}
         </div>
       ) : (
-        <p className="ms-health__ok-copy">本地代理在线，设备发现与消息同步都已接入当前页面。</p>
+        <p className="ms-health__ok-copy">桌面运行时在线，设备发现与消息同步都已接入当前界面。</p>
       )}
     </section>
   );
@@ -35,7 +35,7 @@ export function HealthBanner({ health, lastEventSeq }: HealthBannerProps) {
 
 function resolveHealthHeadline(status: string): string {
   if (status === "ok") {
-    return "本机代理已就绪";
+    return "桌面运行时已就绪";
   }
   if (status === "degraded") {
     return "网络状态需要关注";

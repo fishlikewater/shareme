@@ -1,29 +1,36 @@
 # Message Share 仓库协作规范
 
-## 1. 宗旨
+## 1. 目标
 
-本仓库行 `OpenSpec + superpowers` 协作之法。`superpowers` 主其事，`OpenSpec` 定其文；二者相承，不得并立为二源。
+本仓库采用 `OpenSpec + superpowers` 协作模式：
 
-## 2. 分职
+- `OpenSpec` 负责基于提案产出和管理正式变更工件。
+- `superpowers` 负责以正式工件为输入开展探索、规划、开发与状态同步。
 
-- `superpowers` 司探索、澄清、整理需求、起草 `specs`、编制 `plan`、执行开发、评审与验收。
-- `OpenSpec` 据 `superpowers` 所成 `specs` 与 `plan`，建正式 `proposal.md`、`design.md`、`specs/**/*.md`、`tasks.md`，并总而治之。
-- `docs/superpowers/specs/` 与 `docs/superpowers/plans/` 可为工作稿；正式工件皆归 `openspec/changes/<change>/`。
+二者不是两套并行体系，而是“`OpenSpec` 管正式文档，`superpowers` 管执行过程”。
 
-## 3. 同步
+## 2. `OpenSpec` 职责
 
-- `OpenSpec` 之 `tasks.md` 与 `superpowers` 之开发 `plan`，须一一相应，次序相同，语义一致。
-- 凡任务有增删、拆并、改序，`task` 与 `plan` 须同时更新，不得一新一旧。
-- `superpowers` 执行之时，须同步回写 `task` 进度与 `plan` 进度，使文与实常相符。
+- `OpenSpec` 应根据提案，在 `openspec/changes/<change>/` 下产出 `proposal.md`、`design.md`、`specs/**/*.md`、`tasks.md` 等相关文件。
+- 上述文件构成该 change 的正式文档与任务基线。
+- 凡需求、设计、规格、任务发生正式变更，均应优先更新对应 `OpenSpec` 工件。
 
-## 4. 执行
+## 3. `superpowers` 职责
 
-- 无 `active OpenSpec change`，不得入正式编码；活跃变更可用 `openspec list --json` 查之。
-- `OpenSpec` 所生 `tasks.md`，乃 `superpowers` 执行之据；开发、排期、拆解，皆不得离此自立。
-- 若范围、方案或次序有变，先修 `OpenSpec`，次同步 `plan`，后改代码。
+- `superpowers` 的 `brainstorming` 与 `writing-plans`必须以对应 `OpenSpec` 工件为输入，不得脱离正式工件另起一套范围或计划。
+- `superpowers` 在进入开发前，必须检查并对齐开发计划与 `OpenSpec` 的 `tasks.md`。
+- `superpowers` 在执行过程中，必须同步更新开发计划状态与 `OpenSpec` 任务状态，保证两边一致。
 
-## 5. 评审与验收
+## 4. 对齐与同步规则
 
-- 评审与验收，唯 `tasks.md` 为源；`specs` 定其意，`plan` 述其法，皆不得越而代之。
-- `superpowers` 于评审与验收时，须逐项对照 `tasks.md` 核验，并同步回写结果。
-- 任务未结、进度未同步、结论未回写者，不得称完成。
+- `superpowers` 的开发计划应与 `OpenSpec` 的 `tasks.md` 在任务粒度、执行顺序和完成状态上保持一致。
+- 若 `tasks.md` 有增删、拆分、合并、重排或状态变更，开发计划必须同步调整。
+- 若开发计划有实质性变更，必须同时检查并更新 `OpenSpec` 的 `tasks.md`，不得出现一边已改、一边仍旧的情况。
+- 若发现两边不一致，应先完成对齐，再继续开发、评审或验收。
+
+## 5. 执行约束s
+
+- 无 `active OpenSpec change` 时，不允许进入正式编码实现。
+- `OpenSpec` 的 `tasks.md` 是 `superpowers` 执行、跟踪和验收的直接依据。
+- `brainstorming` 与 `writing-plans` 的输出，应持续回写并反映到 `OpenSpec` 工件与开发计划中。
+- 当前活跃变更使用 `openspec list --json` 查看。

@@ -1507,8 +1507,8 @@ func TestSendFileThrottlesIntermediateTransferSnapshots(t *testing.T) {
 		context.Background(),
 		"peer-6",
 		"hello.txt",
-		1<<20,
-		bytes.NewReader(make([]byte, 1<<20)),
+		128<<10,
+		bytes.NewReader(make([]byte, 128<<10)),
 	); err != nil {
 		t.Fatalf("unexpected send file error: %v", err)
 	}

@@ -1,8 +1,12 @@
 package device
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"message-share/backend/internal/domain"
 )
 
 func TestEnsureLocalDeviceGeneratesDeviceNameAndKeys(t *testing.T) {
@@ -42,7 +46,7 @@ func TestEnsureLocalDeviceReusesPersistedIdentity(t *testing.T) {
 	}
 }
 
-func TestEnsureLocalDevicePreservesPersistedDeviceName(t *testing.T) {
+func TestEnsureLocalDeviceSyncsConfiguredDeviceNameToPersistedIdentity(t *testing.T) {
 	identityPath := filepath.Join(t.TempDir(), "local-device.json")
 
 	device, err := EnsureLocalDevice(identityPath, "default-name")
@@ -55,7 +59,7 @@ func TestEnsureLocalDevicePreservesPersistedDeviceName(t *testing.T) {
 		t.Fatalf("persist custom name: %v", err)
 	}
 
-	second, err := EnsureLocalDevice(identityPath, "default-name")
+	second, err := EnsureLocalDevice(identityPath, "configured-name")
 	if err != nil {
 		t.Fatalf("unexpected second ensure error: %v", err)
 	}
@@ -63,20 +67,20 @@ func TestEnsureLocalDevicePreservesPersistedDeviceName(t *testing.T) {
 	if second.DeviceID != device.DeviceID {
 		t.Fatalf("expected same device id, got %s and %s", device.DeviceID, second.DeviceID)
 	}
-	if second.DeviceName != "custom-name" {
-		t.Fatalf("expected persisted custom device name, got %s", second.DeviceName)
+	if second.DeviceName != "configured-name" {
+		t.Fatalf("expected configured device name to be synced, got %s", second.DeviceName)
 	}
 
 	stored, err := readLocalDevice(identityPath)
 	if err != nil {
 		t.Fatalf("read stored device: %v", err)
 	}
-	if stored.DeviceName != "custom-name" {
-		t.Fatalf("expected stored custom name, got %s", stored.DeviceName)
+	if stored.DeviceName != "configured-name" {
+		t.Fatalf("expected stored device name to be updated, got %s", stored.DeviceName)
 	}
 }
 
-func TestEnsureLocalDeviceBackfillsMissingPersistedDeviceName(t *testing.T) {
+func TestEnsureLocalDeviceReturnsErrorWhenPersistedIdentityMissingDeviceName(t *testing.T) {
 	identityPath := filepath.Join(t.TempDir(), "local-device.json")
 
 	device, err := EnsureLocalDevice(identityPath, "default-name")
@@ -89,20 +93,75 @@ func TestEnsureLocalDeviceBackfillsMissingPersistedDeviceName(t *testing.T) {
 		t.Fatalf("persist blank name: %v", err)
 	}
 
-	second, err := EnsureLocalDevice(identityPath, "fallback-name")
+	_, err = EnsureLocalDevice(identityPath, "fallback-name")
 	if err != nil {
-		t.Fatalf("unexpected second ensure error: %v", err)
+		if !strings.Contains(strings.ToLower(err.Error()), "device") {
+			t.Fatalf("expected invalid device-name error, got %v", err)
+		}
+		return
+	}
+	t.Fatal("expected missing device name to return error")
+}
+
+func TestEnsureLocalDeviceReturnsErrorWhenIdentityFileIsInvalid(t *testing.T) {
+	identityPath := filepath.Join(t.TempDir(), "local-device.json")
+	if err := os.WriteFile(identityPath, []byte("{invalid-json"), 0o600); err != nil {
+		t.Fatalf("write invalid identity file: %v", err)
 	}
 
-	if second.DeviceName != "fallback-name" {
-		t.Fatalf("expected backfilled device name, got %s", second.DeviceName)
+	_, err := EnsureLocalDevice(identityPath, "office-device")
+	if err == nil {
+		t.Fatal("expected invalid identity file to return error")
+	}
+	if !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("expected invalid identity error, got %v", err)
+	}
+}
+
+func TestEnsureLocalDeviceReturnsErrorWhenIdentityStructureIncomplete(t *testing.T) {
+	identityPath := filepath.Join(t.TempDir(), "local-device.json")
+
+	first, err := EnsureLocalDevice(identityPath, "office-device")
+	if err != nil {
+		t.Fatalf("generate identity: %v", err)
 	}
 
-	stored, err := readLocalDevice(identityPath)
-	if err != nil {
-		t.Fatalf("read stored device: %v", err)
+	cases := []struct {
+		name   string
+		mutate func(*testing.T, *domain.LocalDevice)
+	}{
+		{
+			name: "missing device id",
+			mutate: func(t *testing.T, device *domain.LocalDevice) {
+				device.DeviceID = ""
+			},
+		},
+		{
+			name: "missing public key pem",
+			mutate: func(t *testing.T, device *domain.LocalDevice) {
+				device.PublicKeyPEM = ""
+			},
+		},
+		{
+			name: "missing private key pem",
+			mutate: func(t *testing.T, device *domain.LocalDevice) {
+				device.PrivateKeyPEM = ""
+			},
+		},
 	}
-	if stored.DeviceName != "fallback-name" {
-		t.Fatalf("expected stored backfilled name, got %s", stored.DeviceName)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			device := first
+			tc.mutate(t, &device)
+			if err := persistLocalDevice(identityPath, device); err != nil {
+				t.Fatalf("persist invalid identity: %v", err)
+			}
+
+			_, err := EnsureLocalDevice(identityPath, "office-device")
+			if err == nil {
+				t.Fatal("expected incomplete identity to return error")
+			}
+		})
 	}
 }

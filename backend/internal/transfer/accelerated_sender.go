@@ -61,6 +61,7 @@ type AcceleratedStripingController struct {
 	current     int
 	initialized bool
 	previousTPS float64
+	declines    int
 }
 
 func NewAcceleratedStripingController(initial int, max int) *AcceleratedStripingController {
@@ -91,11 +92,19 @@ func (c *AcceleratedStripingController) Observe(window AcceleratedStripingWindow
 
 	switch {
 	case window.SenderBlocked || window.ReceiverBacklog:
+		c.declines = 0
 		c.stepDown()
 	case currentTPS > 0 && c.previousTPS > 0 && currentTPS >= c.previousTPS*1.15 && !window.SenderBlocked && !window.ReceiverBacklog:
+		c.declines = 0
 		c.stepUp()
 	case currentTPS > 0 && c.previousTPS > 0 && currentTPS <= c.previousTPS*0.90:
-		c.stepDown()
+		c.declines++
+		if c.declines >= 2 {
+			c.stepDown()
+			c.declines = 0
+		}
+	default:
+		c.declines = 0
 	}
 
 	if currentTPS > 0 {

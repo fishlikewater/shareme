@@ -22,9 +22,6 @@ type Manager struct {
 }
 
 func NewManager(picker Picker, ttl time.Duration, now func() time.Time) *Manager {
-	if picker == nil {
-		picker = NewPicker()
-	}
 	if ttl <= 0 {
 		ttl = DefaultLeaseTTL
 	}
@@ -49,10 +46,31 @@ func (m *Manager) SetNow(now func() time.Time) {
 }
 
 func (m *Manager) Pick(ctx context.Context) (Lease, error) {
+	if m.picker == nil {
+		return Lease{}, fmt.Errorf("local file picker not configured")
+	}
 	picked, err := m.picker.Pick(ctx)
 	if err != nil {
 		return Lease{}, err
 	}
+	return m.registerPickedFile(picked)
+}
+
+func (m *Manager) RegisterPath(path string) (Lease, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Lease{}, fmt.Errorf("stat local file: %w", err)
+	}
+
+	return m.registerPickedFile(PickedFile{
+		Path:        path,
+		DisplayName: filepath.Base(path),
+		Size:        info.Size(),
+		ModifiedAt:  info.ModTime().UTC(),
+	})
+}
+
+func (m *Manager) registerPickedFile(picked PickedFile) (Lease, error) {
 	if picked.Path == "" {
 		return Lease{}, ErrLeaseInvalid
 	}

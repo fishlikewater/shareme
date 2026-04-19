@@ -2,8 +2,17 @@
 
 package config
 
-import "fmt"
+import "os"
 
 func resolvePlatformDownloadDir() (string, error) {
-	return "", fmt.Errorf("system downloads dir is unsupported on this platform")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return resolveUnixDownloadDir(
+		homeDir,
+		os.Getenv("XDG_DOWNLOAD_DIR"),
+		os.Getenv("XDG_CONFIG_HOME"),
+		os.ReadFile,
+	)
 }

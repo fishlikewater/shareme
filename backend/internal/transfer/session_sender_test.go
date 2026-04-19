@@ -457,7 +457,9 @@ func (f *fakeSessionTransport) StartTransferSession(
 	_ discovery.PeerRecord,
 	request protocol.TransferSessionStartRequest,
 ) (protocol.TransferSessionStartResponse, error) {
+	f.mu.Lock()
 	f.startRequests = append(f.startRequests, request)
+	f.mu.Unlock()
 	return f.startResponse, nil
 }
 
@@ -502,7 +504,9 @@ func (f *fakeSessionTransport) UploadTransferPart(
 	if f.uploadErr != nil && request.PartIndex == f.failPartIndex {
 		return protocol.TransferPartResponse{}, f.uploadErr
 	}
+	f.mu.Lock()
 	f.partRequests = append(f.partRequests, request)
+	f.mu.Unlock()
 	return protocol.TransferPartResponse{
 		SessionID:     request.SessionID,
 		PartIndex:     request.PartIndex,
@@ -519,7 +523,9 @@ func (f *fakeSessionTransport) CompleteTransferSession(
 	if f.requireLiveCompleteContext && ctx.Err() != nil {
 		return protocol.TransferSessionCompleteResponse{}, ctx.Err()
 	}
+	f.mu.Lock()
 	f.completeRequests = append(f.completeRequests, request)
+	f.mu.Unlock()
 	return f.completeResponse, nil
 }
 
@@ -531,7 +537,9 @@ func (f *fakeSessionTransport) ForgetTransferSession(sessionID string) {
 			f.forgetBeforeUploadRelease = true
 		}
 	}
+	f.mu.Lock()
 	f.forgottenSessionIDs = append(f.forgottenSessionIDs, sessionID)
+	f.mu.Unlock()
 }
 
 func sessionSenderSHA256Hex(content []byte) string {

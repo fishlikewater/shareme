@@ -2,16 +2,27 @@
 .worktrees/
 .serena/
 .superpowers/
+
+# 本地缓存与临时输出
 .cache/
-backend/message-share-agent.exe
-backend/message-share-agent
+.tmp/
+output/
+backend/.cache/
+coverage/
+
+# 桌面构建产物与本地临时二进制
+backend/*.exe
+backend/build/
+backend/frontend/dist/
+
+# 前端生成物与依赖
 frontend/node_modules/
-frontend/dist/
-backend/internal/webui/dist/*
-!backend/internal/webui/dist/.keep
+frontend/wailsjs/
+frontend/package.json.md5
 frontend/tsconfig.tsbuildinfo
 node_modules/
+
+# 本地数据库
 *.db
 *.db-shm
 *.db-wal
-coverage/

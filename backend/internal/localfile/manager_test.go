@@ -95,3 +95,36 @@ func TestManagerResolveRejectsChangedFile(t *testing.T) {
 		t.Fatalf("expected Resolve to reject changed file")
 	}
 }
+
+func TestManagerRegisterPathCreatesLeaseWithoutPicker(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.bin")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+
+	manager := localfile.NewManager(nil, 10*time.Minute, func() time.Time {
+		return time.Unix(1700000100, 0).UTC()
+	})
+
+	lease, err := manager.RegisterPath(path)
+	if err != nil {
+		t.Fatalf("RegisterPath() error = %v", err)
+	}
+	if lease.LocalFileID == "" {
+		t.Fatalf("expected LocalFileID to be set")
+	}
+	if lease.Path != "" {
+		t.Fatalf("expected safe snapshot without path, got %q", lease.Path)
+	}
+	if lease.DisplayName != "demo.bin" {
+		t.Fatalf("unexpected display name: %q", lease.DisplayName)
+	}
+	if lease.Size != info.Size() {
+		t.Fatalf("unexpected size: %d", lease.Size)
+	}
+}

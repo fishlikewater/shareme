@@ -303,7 +303,7 @@ func TestDefaultConfigFallsBackToResolvedDataDirWhenConfiguredDataDirInvalid(t *
 	t.Setenv("MESSAGE_SHARE_DATA_DIR", blockedDataDir)
 
 	cfg := Default()
-	expectedDataDir := filepath.Join(fallbackHome, "MessageShare")
+	expectedDataDir := filepath.Join(fallbackHome, ".message-share")
 	expectedDownloadDir := filepath.Join(expectedDataDir, "downloads")
 	if cfg.DataDir != expectedDataDir {
 		t.Fatalf("expected invalid configured data dir to fall back to %s, got %s", expectedDataDir, cfg.DataDir)
@@ -313,11 +313,8 @@ func TestDefaultConfigFallsBackToResolvedDataDirWhenConfiguredDataDirInvalid(t *
 	}
 }
 
-func TestDefaultConfigUsesLocalhostAndFixedPorts(t *testing.T) {
+func TestDefaultConfigUsesFixedPorts(t *testing.T) {
 	cfg := Default()
-	if cfg.LocalAPIAddr != "127.0.0.1:19100" {
-		t.Fatalf("expected localhost api addr, got %s", cfg.LocalAPIAddr)
-	}
 	if cfg.AgentTCPPort != 19090 {
 		t.Fatalf("expected tcp port 19090, got %d", cfg.AgentTCPPort)
 	}
@@ -339,7 +336,6 @@ func TestDefaultConfigUsesLocalhostAndFixedPorts(t *testing.T) {
 }
 
 func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
-	t.Setenv("MESSAGE_SHARE_LOCAL_API_ADDR", "127.0.0.1:52350")
 	t.Setenv("MESSAGE_SHARE_AGENT_TCP_PORT", "52351")
 	t.Setenv("MESSAGE_SHARE_ACCELERATED_DATA_PORT", "52353")
 	t.Setenv("MESSAGE_SHARE_ACCELERATED_ENABLED", "false")
@@ -350,9 +346,6 @@ func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
 	t.Setenv("MESSAGE_SHARE_DEVICE_NAME", "客厅电脑")
 
 	cfg := Default()
-	if cfg.LocalAPIAddr != "127.0.0.1:52350" {
-		t.Fatalf("expected overridden api addr, got %s", cfg.LocalAPIAddr)
-	}
 	if cfg.AgentTCPPort != 52351 {
 		t.Fatalf("expected overridden tcp port, got %d", cfg.AgentTCPPort)
 	}
@@ -382,40 +375,117 @@ func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigFallsBackWhenUserConfigDirCannotBeCreated(t *testing.T) {
+func TestDefaultConfigUsesMessageShareRootLayout(t *testing.T) {
 	originalResolver := systemDownloadDirResolver
 	t.Cleanup(func() {
 		systemDownloadDirResolver = originalResolver
 	})
 
 	systemDownloadDirResolver = func() (string, error) {
-		return "", errors.New("skip system downloads")
+		return "", errors.New("system downloads unavailable")
 	}
 
-	brokenConfigBase := filepath.Join(t.TempDir(), "broken-config-base")
-	if err := os.WriteFile(brokenConfigBase, []byte("not-a-directory"), 0o644); err != nil {
-		t.Fatalf("expected broken config base file to be created: %v", err)
+	homeDir := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("expected home directory to be created: %v", err)
 	}
 
-	fallbackHome := filepath.Join(t.TempDir(), "fallback-home")
-	if err := os.MkdirAll(fallbackHome, 0o755); err != nil {
-		t.Fatalf("expected fallback home directory to be created: %v", err)
-	}
-
-	t.Setenv("APPDATA", brokenConfigBase)
-	t.Setenv("XDG_CONFIG_HOME", brokenConfigBase)
-	t.Setenv("USERPROFILE", fallbackHome)
-	t.Setenv("HOME", fallbackHome)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOME", homeDir)
 
 	cfg := Default()
-	expectedDataDir := filepath.Join(fallbackHome, "MessageShare")
+	expectedDataDir := filepath.Join(homeDir, ".message-share")
 	if cfg.DataDir != expectedDataDir {
-		t.Fatalf("expected fallback data dir %s, got %s", expectedDataDir, cfg.DataDir)
+		t.Fatalf("expected default data dir %s, got %s", expectedDataDir, cfg.DataDir)
 	}
-	if !strings.HasPrefix(cfg.IdentityFilePath, expectedDataDir) {
-		t.Fatalf("expected identity path to use fallback data dir, got %s", cfg.IdentityFilePath)
+	if cfg.IdentityFilePath != filepath.Join(expectedDataDir, "local-device.json") {
+		t.Fatalf("expected identity path %s, got %s", filepath.Join(expectedDataDir, "local-device.json"), cfg.IdentityFilePath)
 	}
-	if !strings.HasPrefix(cfg.DefaultDownloadDir, expectedDataDir) {
-		t.Fatalf("expected download dir to use fallback data dir, got %s", cfg.DefaultDownloadDir)
+	if cfg.DatabasePath != filepath.Join(expectedDataDir, "message-share.db") {
+		t.Fatalf("expected database path %s, got %s", filepath.Join(expectedDataDir, "message-share.db"), cfg.DatabasePath)
 	}
+	if cfg.LogDir != filepath.Join(expectedDataDir, "logs") {
+		t.Fatalf("expected log dir %s, got %s", filepath.Join(expectedDataDir, "logs"), cfg.LogDir)
+	}
+	if cfg.TempDir != filepath.Join(expectedDataDir, "tmp") {
+		t.Fatalf("expected temp dir %s, got %s", filepath.Join(expectedDataDir, "tmp"), cfg.TempDir)
+	}
+	if cfg.DefaultDownloadDir != filepath.Join(expectedDataDir, "downloads") {
+		t.Fatalf("expected fallback download dir %s, got %s", filepath.Join(expectedDataDir, "downloads"), cfg.DefaultDownloadDir)
+	}
+	if _, err := os.Stat(filepath.Join(expectedDataDir, "config.json")); err != nil {
+		t.Fatalf("expected config file to be created: %v", err)
+	}
+}
+
+func TestLoadDefaultReturnsErrorWhenConfigFileInvalid(t *testing.T) {
+	homeDir := filepath.Join(t.TempDir(), "home")
+	rootDir := filepath.Join(homeDir, ".message-share")
+	if err := os.MkdirAll(rootDir, 0o755); err != nil {
+		t.Fatalf("expected root dir to be created: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rootDir, "config.json"), []byte("{invalid-json"), 0o600); err != nil {
+		t.Fatalf("expected invalid config to be written: %v", err)
+	}
+
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOME", homeDir)
+
+	_, err := LoadDefault()
+	if err == nil {
+		t.Fatal("expected invalid config to return error")
+	}
+	if !strings.Contains(err.Error(), "unmarshal settings file") {
+		t.Fatalf("expected settings parse error, got %v", err)
+	}
+}
+
+func TestLoadDefaultMigratesLegacyDataBeforeReadingNewRoot(t *testing.T) {
+	originalResolver := systemDownloadDirResolver
+	originalUserConfigDir := legacyUserConfigDir
+	originalUserHomeDir := legacyUserHomeDir
+	t.Cleanup(func() {
+		systemDownloadDirResolver = originalResolver
+		legacyUserConfigDir = originalUserConfigDir
+		legacyUserHomeDir = originalUserHomeDir
+	})
+
+	systemDownloadDirResolver = func() (string, error) {
+		return "", errors.New("system downloads unavailable")
+	}
+
+	baseDir := t.TempDir()
+	homeDir := filepath.Join(baseDir, "home")
+	legacyConfigBase := filepath.Join(baseDir, "legacy-config-base")
+	legacyRoot := filepath.Join(legacyConfigBase, "MessageShare")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("create home dir: %v", err)
+	}
+	legacyUserConfigDir = func() (string, error) {
+		return legacyConfigBase, nil
+	}
+	legacyUserHomeDir = func() (string, error) {
+		return filepath.Join(baseDir, "unused-home"), nil
+	}
+	legacy := writeLegacyRuntimeData(t, legacyRoot)
+
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOME", homeDir)
+
+	cfg, err := LoadDefault()
+	if err != nil {
+		t.Fatalf("load default config: %v", err)
+	}
+
+	newRoot := filepath.Join(homeDir, ".message-share")
+	if cfg.DataDir != newRoot {
+		t.Fatalf("expected migrated data dir %s, got %s", newRoot, cfg.DataDir)
+	}
+	if cfg.DeviceName != "legacy-device" {
+		t.Fatalf("expected migrated device name, got %s", cfg.DeviceName)
+	}
+	assertFileContent(t, filepath.Join(newRoot, "config.json"), legacy.configContent)
+	assertFileContent(t, filepath.Join(newRoot, "local-device.json"), legacy.identityContent)
+	assertFileContent(t, filepath.Join(newRoot, "message-share.db"), legacy.databaseContent)
+	assertFileContent(t, filepath.Join(newRoot, migrationMarkerFileName), []byte(legacyRoot))
 }

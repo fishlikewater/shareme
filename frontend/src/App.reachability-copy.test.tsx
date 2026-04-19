@@ -18,7 +18,7 @@ function createApi(snapshot: BootstrapSnapshot): LocalApi {
     startPairing: vi.fn<(peerDeviceId: string) => Promise<PairingSnapshot>>(),
     confirmPairing: vi.fn<(pairingId: string) => Promise<PairingSnapshot>>(),
     sendText: vi.fn<(peerDeviceId: string, body: string) => Promise<MessageSnapshot>>(),
-    sendFile: vi.fn<(peerDeviceId: string, file: File) => Promise<TransferSnapshot>>(),
+    sendFile: vi.fn<(peerDeviceId: string, file?: File) => Promise<TransferSnapshot>>(),
     pickLocalFile: vi.fn<() => Promise<LocalFileSnapshot>>(),
     sendAcceleratedFile: vi.fn<(peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>>(),
     listMessageHistory: vi.fn(),

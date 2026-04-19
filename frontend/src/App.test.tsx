@@ -22,7 +22,7 @@ class FakeApi implements LocalApi {
   readonly startedPairings: string[] = [];
   readonly confirmedPairings: string[] = [];
   readonly sentTexts: Array<{ peerDeviceId: string; body: string }> = [];
-  readonly sentFiles: Array<{ peerDeviceId: string; file: File }> = [];
+  readonly sentFiles: Array<{ peerDeviceId: string }> = [];
   readonly pickedLocalFiles: number[] = [];
   readonly sentAcceleratedFiles: Array<{ peerDeviceId: string; localFileId: string }> = [];
   readonly listedHistory: Array<{ conversationId: string; beforeCursor?: string }> = [];
@@ -68,17 +68,17 @@ class FakeApi implements LocalApi {
     };
   }
 
-  async sendFile(peerDeviceId: string, file: File): Promise<TransferSnapshot> {
-    this.sentFiles.push({ peerDeviceId, file });
+  async sendFile(peerDeviceId: string): Promise<TransferSnapshot> {
+    this.sentFiles.push({ peerDeviceId });
     return {
       transferId: "transfer-1",
       messageId: "msg-file-1",
-      fileName: file.name,
-      fileSize: file.size,
+      fileName: "hello.txt",
+      fileSize: 5,
       state: "done",
       createdAt: "2026-04-10T08:25:00Z",
       direction: "outgoing",
-      bytesTransferred: file.size,
+      bytesTransferred: 5,
       progressPercent: 100,
       rateBytesPerSec: 0,
       etaSeconds: 0,
@@ -257,7 +257,7 @@ describe("App", () => {
 
     render(<App api={api} />);
 
-    expect(screen.getByText("正在连接本机代理")).toBeInTheDocument();
+    expect(screen.getByText("正在启动桌面运行时")).toBeInTheDocument();
     expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
     expect(screen.getByText("已发现 3 台设备")).toBeInTheDocument();
     expect(screen.getByText("文字与文件都会直连传输，不经过云端。")).toBeInTheDocument();
@@ -335,11 +335,8 @@ describe("App", () => {
       expect(screen.getAllByText("你好").length).toBeGreaterThan(0);
     });
 
-    const file = new File(["hello"], "hello.txt", { type: "text/plain" });
     expect(screen.getByRole("button", { name: "选择文件" })).toBeInTheDocument();
-    fireEvent.change(screen.getByTestId("file-input"), {
-      target: { files: [file] },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "选择文件" }));
 
     await waitFor(() => {
       expect(api.sentFiles).toHaveLength(1);
@@ -379,7 +376,7 @@ describe("App", () => {
     });
   });
 
-  it("本地 agent 选中的非极速文件也可以继续走普通文件发送闭环", async () => {
+  it("桌面宿主选中的非极速文件也可以继续走普通文件发送闭环", async () => {
     const api = new FakeApi(bootstrapSnapshot);
     vi.spyOn(api, "pickLocalFile").mockResolvedValue({
       localFileId: "lf-small",
@@ -424,7 +421,7 @@ describe("App", () => {
 
     render(<App api={api} />);
 
-    expect(await screen.findByText("无法连接本机代理")).toBeInTheDocument();
+    expect(await screen.findByText("无法启动桌面运行时")).toBeInTheDocument();
     expect(screen.getByText("ECONNREFUSED")).toBeInTheDocument();
   });
 

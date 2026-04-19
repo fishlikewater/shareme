@@ -8,7 +8,6 @@ import (
 )
 
 type AppConfig struct {
-	LocalAPIAddr           string
 	AgentTCPPort           int
 	AcceleratedDataPort    int
 	AcceleratedEnabled     bool
@@ -16,27 +15,55 @@ type AppConfig struct {
 	DiscoveryListenAddr    string
 	DiscoveryBroadcastAddr string
 	DataDir                string
+	DatabasePath           string
+	LogDir                 string
+	TempDir                string
 	DeviceName             string
 	IdentityFilePath       string
 	DefaultDownloadDir     string
 	MaxAutoAcceptFileMB    int64
 }
 
-func Default() AppConfig {
+func LoadDefault() (AppConfig, error) {
+	defaultLayout, err := ResolveDefaultLayout()
+	if err != nil {
+		return AppConfig{}, err
+	}
+	dataDir := defaultLayout.RootDir
+	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DATA_DIR")); value != "" {
+		if err := ensureDownloadDirUsable(value); err == nil {
+			dataDir = value
+		}
+	}
+	if filepath.Clean(dataDir) == filepath.Clean(defaultLayout.RootDir) {
+		if err := MigrateLegacyData(MigrationOptions{
+			LegacyDirs: LegacyDataDirCandidates(),
+			NewRootDir: defaultLayout.RootDir,
+		}); err != nil {
+			return AppConfig{}, err
+		}
+	}
+
+	layout := ResolveLayout(dataDir)
+	settings, err := LoadSettings(layout.RootDir)
+	if err != nil {
+		return AppConfig{}, err
+	}
+
 	cfg := AppConfig{
-		LocalAPIAddr:        "127.0.0.1:19100",
 		AgentTCPPort:        19090,
 		AcceleratedDataPort: 19092,
 		AcceleratedEnabled:  true,
 		DiscoveryUDPPort:    19091,
-		DataDir:             resolveDefaultDataDir(),
-		DeviceName:          "本机设备",
-		MaxAutoAcceptFileMB: 512,
+		DataDir:             layout.RootDir,
+		DatabasePath:        layout.DatabasePath,
+		LogDir:              layout.LogDir,
+		TempDir:             layout.TempDir,
+		DeviceName:          settings.DeviceName,
+		IdentityFilePath:    layout.IdentityFilePath,
+		MaxAutoAcceptFileMB: settings.MaxAutoAcceptFileMB,
 	}
 
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_LOCAL_API_ADDR")); value != "" {
-		cfg.LocalAPIAddr = value
-	}
 	if value, ok := lookupEnvInt("MESSAGE_SHARE_AGENT_TCP_PORT"); ok {
 		cfg.AgentTCPPort = value
 	}
@@ -48,11 +75,6 @@ func Default() AppConfig {
 	}
 	if value, ok := lookupEnvInt("MESSAGE_SHARE_DISCOVERY_UDP_PORT"); ok {
 		cfg.DiscoveryUDPPort = value
-	}
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DATA_DIR")); value != "" {
-		if err := ensureDownloadDirUsable(value); err == nil {
-			cfg.DataDir = value
-		}
 	}
 	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DEVICE_NAME")); value != "" {
 		cfg.DeviceName = value
@@ -67,66 +89,37 @@ func Default() AppConfig {
 		cfg.DiscoveryBroadcastAddr = value
 	}
 
-	cfg.IdentityFilePath = filepath.Join(cfg.DataDir, "local-device.json")
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DOWNLOAD_DIR")); value != "" {
-		if err := ensureDownloadDirUsable(value); err == nil {
-			cfg.DefaultDownloadDir = value
-		} else if resolved, resolveErr := resolveDefaultDownloadDir(cfg.DataDir); resolveErr == nil {
-			cfg.DefaultDownloadDir = resolved
-		} else {
-			cfg.DefaultDownloadDir = resolveGuaranteedDownloadDir(cfg.DataDir)
-		}
-	} else if resolved, err := resolveDefaultDownloadDir(cfg.DataDir); err == nil {
-		cfg.DefaultDownloadDir = resolved
-	} else {
-		cfg.DefaultDownloadDir = resolveGuaranteedDownloadDir(cfg.DataDir)
-	}
+	cfg.DefaultDownloadDir = resolveConfiguredDownloadDir(settings.DownloadDir, cfg.DataDir)
 
 	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_IDENTITY_FILE")); value != "" {
 		cfg.IdentityFilePath = value
 	}
 
+	return cfg, nil
+}
+
+func Default() AppConfig {
+	cfg, err := LoadDefault()
+	if err != nil {
+		panic(err)
+	}
 	return cfg
 }
 
 func resolveDefaultDataDir() string {
-	for _, candidate := range defaultDataDirCandidates() {
-		if candidate == "" {
-			continue
-		}
-		if err := os.MkdirAll(candidate, 0o755); err == nil {
-			return candidate
-		}
+	dataDir, err := loadDefaultDataDir()
+	if err != nil {
+		panic(err)
 	}
-
-	return filepath.Join(".", "MessageShare")
+	return dataDir
 }
 
-func defaultDataDirCandidates() []string {
-	candidates := make([]string, 0, 3)
-	seen := make(map[string]struct{})
-
-	addCandidate := func(value string) {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return
-		}
-		if _, ok := seen[value]; ok {
-			return
-		}
-		seen[value] = struct{}{}
-		candidates = append(candidates, value)
+func loadDefaultDataDir() (string, error) {
+	layout, err := ResolveDefaultLayout()
+	if err != nil {
+		return "", err
 	}
-
-	if baseDir, err := os.UserConfigDir(); err == nil {
-		addCandidate(filepath.Join(baseDir, "MessageShare"))
-	}
-	if homeDir, err := os.UserHomeDir(); err == nil {
-		addCandidate(filepath.Join(homeDir, "MessageShare"))
-	}
-	addCandidate(filepath.Join(os.TempDir(), "MessageShare"))
-
-	return candidates
+	return layout.RootDir, nil
 }
 
 func lookupEnvInt(key string) (int, bool) {

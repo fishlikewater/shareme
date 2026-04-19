@@ -54,6 +54,27 @@ func TestAcceleratedStripingControllerMovesAcrossDiscreteLevels(t *testing.T) {
 	}
 }
 
+func TestAcceleratedStripingControllerNeedsTwoThroughputDeclinesBeforeStepDown(t *testing.T) {
+	controller := NewAcceleratedStripingController(2, 2)
+
+	controller.Observe(AcceleratedStripingWindow{
+		BytesTransferred: 100,
+		Duration:         time.Second,
+	})
+	if next := controller.Observe(AcceleratedStripingWindow{
+		BytesTransferred: 89,
+		Duration:         time.Second,
+	}); next != 2 {
+		t.Fatalf("expected single throughput dip to keep striping at 2, got %d", next)
+	}
+	if next := controller.Observe(AcceleratedStripingWindow{
+		BytesTransferred: 80,
+		Duration:         time.Second,
+	}); next != 1 {
+		t.Fatalf("expected repeated throughput decline to scale down to 1, got %d", next)
+	}
+}
+
 func TestAcceleratedSenderStreamsFileThroughDedicatedTCPListener(t *testing.T) {
 	payload := []byte("abcdefghijkl")
 	receiver, err := NewAcceleratedReceiver(t.TempDir(), "payload.bin", int64(len(payload)), 4)

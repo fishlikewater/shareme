@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 
 import { FileMessageCard } from "./FileMessageCard";
 import type { ConversationMessage, LocalFileSnapshot, PeerSummary } from "../lib/types";
@@ -16,7 +16,7 @@ type ChatPaneProps = {
   historyLoading: boolean;
   historyError?: string;
   onSendText: (body: string) => Promise<void>;
-  onSendFile: (file: File) => Promise<void>;
+  onSendFile: () => Promise<void>;
   onPickLocalFile: () => Promise<void>;
   onSendAcceleratedFile: () => Promise<void>;
   onLoadOlderMessages: () => Promise<void>;
@@ -41,7 +41,6 @@ export function ChatPane({
   onLoadOlderMessages,
 }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const prependAnchorHeightRef = useRef<number | null>(null);
   const previousConversationIDRef = useRef<string | undefined>(undefined);
@@ -57,21 +56,11 @@ export function ChatPane({
     setDraft("");
   }
 
-  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    await onSendFile(file);
-    event.target.value = "";
-  }
-
-  function handlePickFile() {
+  async function handlePickFile() {
     if (sendingFile || pickingLocalFile || sendingAcceleratedFile) {
       return;
     }
-    fileInputRef.current?.click();
+    await onSendFile();
   }
 
   async function handlePickLocalFile() {
@@ -130,9 +119,7 @@ export function ChatPane({
       <div className="ms-chat-header">
         <div>
           <span className="ms-eyebrow">沟通中心</span>
-          <h2 className="ms-chat-title">
-            {peer ? `连接 ${peer.deviceName}` : "请选择一台设备开始传输"}
-          </h2>
+          <h2 className="ms-chat-title">{peer ? `连接 ${peer.deviceName}` : "请选择一台设备开始传输"}</h2>
           <p className="ms-chat-copy">{resolveChatCopy(peer)}</p>
         </div>
         {peer ? (
@@ -179,9 +166,8 @@ export function ChatPane({
           </div>
         </section>
       ) : null}
-      {peer && !peer.trusted ? (
-        <div className="ms-chat-blocker">尚未完成信任，暂不可发送内容。</div>
-      ) : null}
+
+      {peer && !peer.trusted ? <div className="ms-chat-blocker">尚未完成信任，暂不可发送内容。</div> : null}
       {peer && peer.trusted && !peer.reachable ? (
         <div className="ms-chat-blocker">当前设备暂时不可达，请稍后重试。</div>
       ) : null}
@@ -199,7 +185,7 @@ export function ChatPane({
                 <span className="ms-eyebrow">极速路径</span>
                 <h3 className="ms-accelerated-card__title">大文件直读本地磁盘</h3>
                 <p className="ms-accelerated-card__copy">
-                  由本机 agent 直接读取磁盘文件，减少浏览器中转和重复落盘。
+                  由桌面宿主直接读取磁盘文件，减少中转和重复落盘。
                 </p>
               </div>
               <button
@@ -256,7 +242,7 @@ export function ChatPane({
               </div>
             ) : (
               <div className="ms-accelerated-card__empty">
-                选择一个本地大文件后，这里会展示极速发送资格与发送入口。
+                选择一个本地大文件后，这里会显示极速发送资格与发送入口。
               </div>
             )}
           </section>
@@ -281,19 +267,11 @@ export function ChatPane({
                       ? "已显示全部历史消息"
                       : ""}
             </div>
-            {messages.length === 0 ? (
-              <div className="ms-empty-card">还没有消息，先发一条试试看。</div>
-            ) : null}
+            {messages.length === 0 ? <div className="ms-empty-card">还没有消息，先发一条试试看。</div> : null}
 
             {messages.map((message) => {
               if (message.kind === "file") {
-                return (
-                  <FileMessageCard
-                    key={message.messageId}
-                    message={message}
-                    transfer={message.transfer}
-                  />
-                );
+                return <FileMessageCard key={message.messageId} message={message} transfer={message.transfer} />;
               }
 
               return (
@@ -331,21 +309,13 @@ export function ChatPane({
               <button
                 className="ms-button ms-button--secondary"
                 disabled={sendingFile || pickingLocalFile || sendingAcceleratedFile}
-                onClick={handlePickFile}
+                onClick={() => {
+                  void handlePickFile();
+                }}
                 type="button"
               >
-                {sendingFile ? "文件上传中..." : "选择文件"}
+                {sendingFile ? "文件发送中..." : "选择文件"}
               </button>
-              <input
-                aria-hidden="true"
-                ref={fileInputRef}
-                className="ms-visually-hidden"
-                data-testid="file-input"
-                disabled={sendingFile || pickingLocalFile || sendingAcceleratedFile}
-                onChange={handleFileChange}
-                tabIndex={-1}
-                type="file"
-              />
             </div>
           </form>
         </>

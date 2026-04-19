@@ -4,7 +4,8 @@ import { ChatPane } from "./components/ChatPane";
 import { HealthBanner } from "./components/HealthBanner";
 import { PairCodeDialog } from "./components/PairCodeDialog";
 import { TransferStatusBanner } from "./components/TransferStatusBanner";
-import { createLocalApiClient, type LocalApi } from "./lib/api";
+import { createDefaultLocalApi, type LocalApi } from "./lib/api";
+import { notifyDesktopUiReady } from "./lib/desktop-api";
 import type {
   AgentEvent,
   BootstrapSnapshot,
@@ -52,9 +53,10 @@ const initialBusyState: BusyState = {
 const SNAPSHOT_REFRESH_INTERVAL_MS = 3000;
 
 export default function AppShell({ api }: AppProps) {
-  const [defaultApi] = useState<LocalApi | undefined>(() => (api ? undefined : createLocalApiClient()));
+  const [defaultApi] = useState<LocalApi | undefined>(() => (api ? undefined : createDefaultLocalApi()));
   const resolvedApi = api ?? defaultApi!;
   const mainColumnRef = useRef<HTMLElement | null>(null);
+  const uiReadyReportedRef = useRef(false);
   const [snapshot, setSnapshot] = useState<BootstrapSnapshot | null>(null);
   const [selectedPeerId, setSelectedPeerId] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -64,6 +66,16 @@ export default function AppShell({ api }: AppProps) {
   const [historyStateByConversation, setHistoryStateByConversation] = useState<
     Record<string, ConversationHistoryState | undefined>
   >({});
+
+  useEffect(() => {
+    if (!snapshot || errorMessage || uiReadyReportedRef.current) {
+      return;
+    }
+    uiReadyReportedRef.current = true;
+    void notifyDesktopUiReady().catch(() => {
+      uiReadyReportedRef.current = false;
+    });
+  }, [errorMessage, snapshot]);
 
   useEffect(() => {
     let subscription: ReturnType<LocalApi["subscribeEvents"]> | undefined;
@@ -215,7 +227,7 @@ export default function AppShell({ api }: AppProps) {
     }
   }
 
-  async function handleSendFile(file: File) {
+  async function handleSendFile() {
     if (!selectedPeer) {
       return;
     }
@@ -223,10 +235,10 @@ export default function AppShell({ api }: AppProps) {
     setCommandError(undefined);
     setBusyState((current) => ({ ...current, sendingFile: true }));
     try {
-      const transfer = await resolvedApi.sendFile(selectedPeer.deviceId, file);
+      const transfer = await resolvedApi.sendFile(selectedPeer.deviceId);
       startTransition(() => {
         setSnapshot((current) =>
-          current ? upsertOutgoingFile(current, selectedPeer.deviceId, file, transfer) : current,
+          current ? upsertOutgoingFile(current, selectedPeer.deviceId, transfer) : current,
         );
       });
     } catch (error) {
@@ -337,7 +349,7 @@ export default function AppShell({ api }: AppProps) {
         <div className="ms-shell">
           <section className="ms-splash ms-splash--error">
             <span className="ms-eyebrow">Connection Error</span>
-            <h1 className="ms-splash__title">无法连接本机代理</h1>
+            <h1 className="ms-splash__title">无法启动桌面运行时</h1>
             <p className="ms-splash__body">{errorMessage}</p>
           </section>
         </div>
@@ -352,7 +364,7 @@ export default function AppShell({ api }: AppProps) {
           <section className="ms-splash">
             <span className="ms-eyebrow">LAN P2P Share</span>
             <h1 className="ms-splash__title">一页直传</h1>
-            <p className="ms-splash__body">正在连接本机代理</p>
+            <p className="ms-splash__body">正在启动桌面运行时</p>
           </section>
         </div>
       </main>
@@ -777,7 +789,6 @@ function upsertMessageForPeer(
 function upsertOutgoingFile(
   snapshot: BootstrapSnapshot,
   peerDeviceId: string,
-  file: File,
   transfer: TransferSnapshot,
 ): BootstrapSnapshot {
   const conversationId = resolveConversationId(snapshot, peerDeviceId) ?? `conv-${peerDeviceId}`;
@@ -789,7 +800,7 @@ function upsertOutgoingFile(
     conversationId,
     direction: "outgoing",
     kind: "file",
-    body: transfer.fileName || file.name,
+    body: transfer.fileName || "文件",
     status: transfer.state === "done" ? "sent" : transfer.state,
     createdAt: transfer.createdAt,
   });

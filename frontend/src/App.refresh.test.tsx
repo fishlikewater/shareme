@@ -210,7 +210,7 @@ describe("App refresh", () => {
     render(<App api={api} />);
 
     await flushRender();
-    expect(screen.getByText("无法连接本机代理")).toBeInTheDocument();
+    expect(screen.getByText("无法启动桌面运行时")).toBeInTheDocument();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);

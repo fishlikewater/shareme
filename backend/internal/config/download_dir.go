@@ -42,10 +42,12 @@ func resolveGuaranteedDownloadDir(dataDir string) string {
 		return resolved
 	}
 
-	for _, candidate := range defaultDataDirCandidates() {
-		fallbackDir := filepath.Join(candidate, "downloads")
-		if err := ensureDownloadDirUsable(fallbackDir); err == nil {
-			return fallbackDir
+	if layout, err := ResolveDefaultLayout(); err == nil {
+		fallbackDir := layout.DownloadsDir
+		if filepath.Clean(fallbackDir) != filepath.Clean(filepath.Join(dataDir, "downloads")) {
+			if err := ensureDownloadDirUsable(fallbackDir); err == nil {
+				return fallbackDir
+			}
 		}
 	}
 
@@ -58,6 +60,24 @@ func resolveGuaranteedDownloadDir(dataDir string) string {
 	}
 
 	panic(fmt.Errorf("resolve guaranteed download dir: no usable download dir available"))
+}
+
+func resolveConfiguredDownloadDir(configured string, dataDir string) string {
+	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DOWNLOAD_DIR")); value != "" {
+		configured = value
+	}
+
+	if value := strings.TrimSpace(configured); value != "" {
+		if err := ensureDownloadDirUsable(value); err == nil {
+			return value
+		}
+	}
+
+	if resolved, err := resolveDefaultDownloadDir(dataDir); err == nil {
+		return resolved
+	}
+
+	return resolveGuaranteedDownloadDir(dataDir)
 }
 
 func resolveSystemDownloadDir() (string, error) {

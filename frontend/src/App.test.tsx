@@ -257,7 +257,7 @@ describe("App", () => {
 
     render(<App api={api} />);
 
-    expect(screen.getByText("正在启动桌面运行时")).toBeInTheDocument();
+    expect(screen.getByText("正在连接本机 Message Share 服务")).toBeInTheDocument();
     expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
     expect(screen.getByText("已发现 3 台设备")).toBeInTheDocument();
     expect(screen.getByText("文字与文件都会直连传输，不经过云端。")).toBeInTheDocument();
@@ -376,7 +376,7 @@ describe("App", () => {
     });
   });
 
-  it("桌面宿主选中的非极速文件也可以继续走普通文件发送闭环", async () => {
+  it("宿主选中的非极速文件也可以继续走普通文件发送闭环", async () => {
     const api = new FakeApi(bootstrapSnapshot);
     vi.spyOn(api, "pickLocalFile").mockResolvedValue({
       localFileId: "lf-small",
@@ -421,7 +421,7 @@ describe("App", () => {
 
     render(<App api={api} />);
 
-    expect(await screen.findByText("无法启动桌面运行时")).toBeInTheDocument();
+    expect(await screen.findByText("无法连接本机服务")).toBeInTheDocument();
     expect(screen.getByText("ECONNREFUSED")).toBeInTheDocument();
   });
 

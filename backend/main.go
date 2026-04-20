@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"log"
 
+	"message-share/backend/internal/frontendassets"
+
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -43,18 +45,5 @@ func main() {
 }
 
 func selectFrontendAssets(assetFS fs.FS) (fs.FS, error) {
-	if distAssets, err := fs.Sub(assetFS, "frontend/dist"); err == nil {
-		if _, err := fs.Stat(distAssets, "index.html"); err == nil {
-			return distAssets, nil
-		}
-	}
-
-	placeholderAssets, err := fs.Sub(assetFS, "frontend")
-	if err != nil {
-		return nil, err
-	}
-	if _, err := fs.Stat(placeholderAssets, "index.html"); err != nil {
-		return nil, err
-	}
-	return placeholderAssets, nil
+	return frontendassets.Select(assetFS)
 }

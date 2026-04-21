@@ -1,8 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const createDesktopApiClient = vi.fn();
+const mockApi = {
+  bootstrap: vi.fn(),
+  startPairing: vi.fn(),
+  confirmPairing: vi.fn(),
+  sendText: vi.fn(),
+  sendFile: vi.fn(),
+  pickLocalFile: vi.fn(),
+  sendAcceleratedFile: vi.fn(),
+  listMessageHistory: vi.fn(),
+  subscribeEvents: vi.fn(() => ({ close: vi.fn(), reconnect: vi.fn() })),
+};
+
+const createDesktopApiClient = vi.fn(() => mockApi);
+const createLocalhostApiClient = vi.fn(() => mockApi);
 const hasDesktopApiBindings = vi.fn();
-const createLocalhostApiClient = vi.fn();
 
 vi.mock("./desktop-api", () => ({
   createDesktopApiClient,
@@ -17,71 +29,65 @@ describe("createDefaultLocalApi", () => {
   const originalWindow = globalThis.window;
 
   afterEach(() => {
-    createDesktopApiClient.mockReset();
-    createLocalhostApiClient.mockReset();
-    hasDesktopApiBindings.mockReset();
-
+    vi.resetModules();
+    vi.clearAllMocks();
     Object.defineProperty(globalThis, "window", {
       configurable: true,
       value: originalWindow,
     });
   });
 
-  it("prefers desktop bindings when they are available", async () => {
+  it("桌面 bindings 可用时优先返回 desktop client", async () => {
     hasDesktopApiBindings.mockReturnValue(true);
-    const desktopApi = { host: "desktop" };
-    createDesktopApiClient.mockReturnValue(desktopApi);
-
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: {
-        location: new URL("http://localhost:4173/app"),
-      },
-    });
 
     const { createDefaultLocalApi } = await import("./api");
+    const api = createDefaultLocalApi();
 
-    expect(createDefaultLocalApi()).toBe(desktopApi);
+    expect(api).toBe(mockApi);
     expect(createDesktopApiClient).toHaveBeenCalledTimes(1);
     expect(createLocalhostApiClient).not.toHaveBeenCalled();
   });
 
-  it.each([
-    "http://localhost:4173/app",
-    "http://127.0.0.1:4173/app",
-    "http://[::1]:4173/app",
-  ])("falls back to the localhost client on loopback browser hosts: %s", async (url) => {
-    hasDesktopApiBindings.mockReturnValue(false);
-    const localhostApi = { host: "localhost" };
-    createLocalhostApiClient.mockReturnValue(localhostApi);
+  it.each(["localhost", "127.0.0.1", "[::1]"])(
+    "桌面 bindings 不可用且页面位于 %s 时切换到 localhost client",
+    async (hostname) => {
+      hasDesktopApiBindings.mockReturnValue(false);
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: {
+          location: {
+            hostname,
+            origin: `http://${hostname}:52350`,
+          },
+        },
+      });
 
+      const { createDefaultLocalApi } = await import("./api");
+      const api = createDefaultLocalApi();
+
+      expect(api).toBe(mockApi);
+      expect(createDesktopApiClient).not.toHaveBeenCalled();
+      expect(createLocalhostApiClient).toHaveBeenCalledWith({
+        origin: `http://${hostname}:52350`,
+      });
+    },
+  );
+
+  it("非 loopback 浏览器且没有桌面 bindings 时抛错", async () => {
+    hasDesktopApiBindings.mockReturnValue(false);
     Object.defineProperty(globalThis, "window", {
       configurable: true,
       value: {
-        location: new URL(url),
+        location: {
+          hostname: "example.com",
+          origin: "https://example.com",
+        },
       },
     });
 
     const { createDefaultLocalApi } = await import("./api");
 
-    expect(createDefaultLocalApi()).toBe(localhostApi);
-    expect(createLocalhostApiClient).toHaveBeenCalledTimes(1);
-    expect(createDesktopApiClient).not.toHaveBeenCalled();
-  });
-
-  it("throws on non-loopback browsers when desktop bindings are unavailable", async () => {
-    hasDesktopApiBindings.mockReturnValue(false);
-
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: {
-        location: new URL("https://example.com/app"),
-      },
-    });
-
-    const { createDefaultLocalApi } = await import("./api");
-
-    expect(() => createDefaultLocalApi()).toThrow(/loopback/i);
+    expect(() => createDefaultLocalApi()).toThrowError("local api bindings not available");
     expect(createDesktopApiClient).not.toHaveBeenCalled();
     expect(createLocalhostApiClient).not.toHaveBeenCalled();
   });

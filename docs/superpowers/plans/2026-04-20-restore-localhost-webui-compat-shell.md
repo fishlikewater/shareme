@@ -58,7 +58,7 @@
 - Test: `frontend/src/lib/api.test.ts`
 - Test: `frontend/src/lib/localhost-api.test.ts`
 
-- [ ] **Step 1: 先写前端 failing tests，锁定宿主选择、SSE 去重和浏览器普通文件发送语义**
+- [x] **Step 1: 先写前端 failing tests，锁定宿主选择、SSE 去重和浏览器普通文件发送语义**
 
 ```ts
 // frontend/src/lib/api.test.ts
@@ -216,13 +216,13 @@ it("uploads browser-selected file as multipart without a pre-stage file", async 
 });
 ```
 
-- [ ] **Step 2: 运行前端测试，确认它们先失败**
+- [x] **Step 2: 运行前端测试，确认它们先失败**
 
 Run: `npm test -- --run src/lib/api.test.ts src/lib/localhost-api.test.ts`
 
 Expected: FAIL，错误点集中在 `createLocalhostApiClient` 缺失、`createDefaultLocalApi()` 仍然只支持桌面 bindings，以及 `sendFile()` 没有浏览器上传路径。
 
-- [ ] **Step 3: 实现前端宿主自动选择和 localhost API 客户端**
+- [x] **Step 3: 实现前端宿主自动选择和 localhost API 客户端**
 
 ```ts
 // frontend/src/lib/api.ts
@@ -435,7 +435,7 @@ async function pickBrowserFile(): Promise<File> {
 </section>
 ```
 
-- [ ] **Step 4: 重新运行前端测试，确认宿主适配通过**
+- [x] **Step 4: 重新运行前端测试，确认宿主适配通过**
 
 Run: `npm test -- --run src/lib/api.test.ts src/lib/localhost-api.test.ts`
 
@@ -463,7 +463,7 @@ git commit -m "feat: add localhost frontend api client"
 - Test: `backend/internal/localui/server_test.go`
 - Test: `backend/internal/localui/events_test.go`
 
-- [ ] **Step 1: 先写 failing tests，锁定共享资源选择、loopback 限制和 SSE backlog/live 语义**
+- [x] **Step 1: 先写 failing tests，锁定共享资源选择、loopback 限制和 SSE backlog/live 语义**
 
 ```go
 // backend/internal/frontendassets/select_test.go
@@ -636,13 +636,13 @@ func TestEventsStreamReplaysBacklogThenStreamsLiveEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行后端测试，确认基础兼容壳能力尚未存在**
+- [x] **Step 2: 运行后端测试，确认基础兼容壳能力尚未存在**
 
 Run: `go test ./internal/frontendassets ./internal/localui -count=1`
 
 Expected: FAIL，原因应包括 `frontendassets.Select`、`localui.NewService`、`localui.NewServer` 等符号不存在。
 
-- [ ] **Step 3: 提取共享前端资源选择器，并让桌面入口切换到共享实现**
+- [x] **Step 3: 提取共享前端资源选择器，并让桌面入口切换到共享实现**
 
 ```go
 // backend/internal/frontendassets/select.go
@@ -745,7 +745,7 @@ func TestSelectFrontendAssetsPrefersBuiltDist(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: 实现 localhost 兼容壳共享门面和基础 HTTP/SSE server**
+- [x] **Step 4: 实现 localhost 兼容壳共享门面和基础 HTTP/SSE server**
 
 ```go
 // backend/internal/localui/service.go
@@ -976,7 +976,7 @@ func mustJSON(payload any) string {
 }
 ```
 
-- [ ] **Step 5: 重新运行后端基础测试，确认 loopback、资源选择和事件流通过**
+- [x] **Step 5: 重新运行后端基础测试，确认 loopback、资源选择和事件流通过**
 
 Run: `go test ./internal/frontendassets ./internal/localui -count=1`
 
@@ -1006,7 +1006,7 @@ git commit -m "feat: add localhost web shell foundation"
 - Test: `backend/cmd/message-share-agent/main_test.go`
 - Test: `backend/internal/config/config_test.go`
 
-- [ ] **Step 1: 先写 failing tests，锁定浏览器上传流式发送、`/api/local-files/pick`、agent URL 输出和本地 HTTP 端口配置**
+- [x] **Step 1: 先写 failing tests，锁定浏览器上传流式发送、`/api/local-files/pick`、agent URL 输出和本地 HTTP 端口配置**
 
 ```go
 // backend/internal/localui/upload_test.go
@@ -1192,13 +1192,13 @@ func (s *stubRuntimeHost) RuntimeService() *appruntime.RuntimeService {
 }
 ```
 
-- [ ] **Step 2: 运行 Go 测试，确认上传、picker 和 agent 启动链路都还未接上**
+- [x] **Step 2: 运行 Go 测试，确认上传、picker 和 agent 启动链路都还未接上**
 
 Run: `go test ./internal/localui ./internal/config ./cmd/message-share-agent -count=1`
 
 Expected: FAIL，原因应包括 `LocalHTTPPort` 缺失、upload route 未实现、`run()` 未接收 localhost host 工厂以及 `/api/local-files/pick` 尚不存在。
 
-- [ ] **Step 3: 实现浏览器上传、`/api/local-files/pick`、`/api/peers/{id}/transfers/accelerated` 和本地 HTTP 端口配置**
+- [x] **Step 3: 实现浏览器上传、`/api/local-files/pick`、`/api/peers/{id}/transfers/accelerated` 和本地 HTTP 端口配置**
 
 ```go
 // backend/internal/config/config.go
@@ -1357,7 +1357,7 @@ sendAcceleratedFile: (peerDeviceId, localFileId) =>
   }),
 ```
 
-- [ ] **Step 4: 让 `message-share-agent` 启动 runtime host + localhost Web UI，并嵌入兼容前端资源**
+- [x] **Step 4: 让 `message-share-agent` 启动 runtime host + localhost Web UI，并嵌入兼容前端资源**
 
 ```go
 // backend/cmd/message-share-agent/assets_embed.go
@@ -1461,7 +1461,7 @@ func shutdownLocalUI(host localUIHost, logger *log.Logger) {
 }
 ```
 
-- [ ] **Step 5: 重新运行 Go 测试，确认上传、picker、端口配置和 agent 启动链路通过**
+- [x] **Step 5: 重新运行 Go 测试，确认上传、picker、端口配置和 agent 启动链路通过**
 
 Run: `go test ./internal/localui ./internal/config ./cmd/message-share-agent -count=1`
 
@@ -1485,7 +1485,7 @@ git commit -m "feat: restore localhost web ui agent shell"
 - Modify: `scripts/test.ps1`
 - Modify: `README.md`
 
-- [ ] **Step 1: 添加 agent 构建脚本，构建前同步浏览器资源到 command 目录**
+- [x] **Step 1: 添加 agent 构建脚本，构建前同步浏览器资源到 command 目录**
 
 ```powershell
 # scripts/build-agent.ps1
@@ -1536,7 +1536,7 @@ cd "${BACKEND_DIR}"
 go build -o "${OUTPUT}" ./cmd/message-share-agent
 ```
 
-- [ ] **Step 2: 添加 agent smoke 脚本，并把总测试脚本扩展到兼容入口**
+- [x] **Step 2: 添加 agent smoke 脚本，并把总测试脚本扩展到兼容入口**
 
 ```powershell
 # scripts/smoke-agent.ps1
@@ -1582,7 +1582,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 ```
 
-- [ ] **Step 3: 更新 README 和测试文档，写清 localhost 兼容入口的运行和验证方式**
+- [x] **Step 3: 更新 README 和测试文档，写清 localhost 兼容入口的运行和验证方式**
 
 ```md
 <!-- README.md 新增片段 -->
@@ -1616,7 +1616,7 @@ if ($LASTEXITCODE -ne 0) {
 5. 确认桌面版仍可通过 `.\scripts\smoke-desktop.ps1 -SkipBuild` 通过
 ```
 
-- [ ] **Step 4: 跑完整验证，确认桌面版不回归且 agent 兼容入口闭环**
+- [x] **Step 4: 跑完整验证，确认桌面版不回归且 agent 兼容入口闭环**
 
 Run: `powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1`
 

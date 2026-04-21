@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"message-share/backend/internal/api"
+	appruntime "message-share/backend/internal/app"
 	"message-share/backend/internal/config"
 )
 
@@ -24,8 +27,11 @@ func TestRunReturnsConfigError(t *testing.T) {
 
 	err := run(context.Background(), discardLogger(), func() (config.AppConfig, error) {
 		return config.AppConfig{}, expectedErr
-	}, func(config.AppConfig, *log.Logger) runtimeHost {
+	}, func(config.AppConfig, *log.Logger, *api.EventBus) runtimeHost {
 		t.Fatal("host factory should not be called")
+		return nil
+	}, func(config.AppConfig, *log.Logger, runtimeHost, *api.EventBus) localUIHost {
+		t.Fatal("local ui factory should not be called")
 		return nil
 	})
 
@@ -43,8 +49,11 @@ func TestRunReturnsStartError(t *testing.T) {
 
 	err := run(context.Background(), discardLogger(), func() (config.AppConfig, error) {
 		return config.AppConfig{DeviceName: "agent"}, nil
-	}, func(config.AppConfig, *log.Logger) runtimeHost {
+	}, func(config.AppConfig, *log.Logger, *api.EventBus) runtimeHost {
 		return host
+	}, func(config.AppConfig, *log.Logger, runtimeHost, *api.EventBus) localUIHost {
+		t.Fatal("local ui factory should not be called")
+		return nil
 	})
 
 	if !errors.Is(err, expectedErr) {
@@ -68,11 +77,14 @@ func TestRunClosesHostOnContextCancel(t *testing.T) {
 				DeviceName:          "office-pc",
 				DataDir:             "C:/message-share",
 				AgentTCPPort:        19090,
+				LocalHTTPPort:       52350,
 				DiscoveryUDPPort:    19091,
 				AcceleratedDataPort: 19092,
 			}, nil
-		}, func(config.AppConfig, *log.Logger) runtimeHost {
+		}, func(config.AppConfig, *log.Logger, *api.EventBus) runtimeHost {
 			return host
+		}, func(config.AppConfig, *log.Logger, runtimeHost, *api.EventBus) localUIHost {
+			return &stubLocalUIHost{url: "http://127.0.0.1:52350/"}
 		})
 	}()
 
@@ -98,11 +110,14 @@ func TestRunReturnsAsyncErrorAndClosesHost(t *testing.T) {
 			DeviceName:          "office-pc",
 			DataDir:             "C:/message-share",
 			AgentTCPPort:        19090,
+			LocalHTTPPort:       52350,
 			DiscoveryUDPPort:    19091,
 			AcceleratedDataPort: 19092,
 		}, nil
-	}, func(config.AppConfig, *log.Logger) runtimeHost {
+	}, func(config.AppConfig, *log.Logger, *api.EventBus) runtimeHost {
 		return host
+	}, func(config.AppConfig, *log.Logger, runtimeHost, *api.EventBus) localUIHost {
+		return &stubLocalUIHost{url: "http://127.0.0.1:52350/"}
 	})
 
 	if !errors.Is(err, expectedErr) {
@@ -116,6 +131,45 @@ func TestRunReturnsAsyncErrorAndClosesHost(t *testing.T) {
 	}
 }
 
+func TestRunLogsLocalhostWebUIAddress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runtimeHostStub := &stubRuntimeHost{errs: make(chan error)}
+	localUIHostStub := &stubLocalUIHost{url: "http://127.0.0.1:52350/"}
+	var output bytes.Buffer
+	logger := log.New(&output, "", 0)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- run(
+			ctx,
+			logger,
+			func() (config.AppConfig, error) {
+				return config.AppConfig{
+					DeviceName:          "office-pc",
+					DataDir:             "C:/message-share",
+					AgentTCPPort:        19090,
+					LocalHTTPPort:       52350,
+					DiscoveryUDPPort:    19091,
+					AcceleratedDataPort: 19092,
+				}, nil
+			},
+			func(config.AppConfig, *log.Logger, *api.EventBus) runtimeHost { return runtimeHostStub },
+			func(config.AppConfig, *log.Logger, runtimeHost, *api.EventBus) localUIHost { return localUIHostStub },
+		)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if !strings.Contains(output.String(), "http://127.0.0.1:52350/") {
+		t.Fatalf("expected localhost url in output, got %q", output.String())
+	}
+}
+
 func TestHeadlessProcessSmoke(t *testing.T) {
 	if os.Getenv("MESSAGE_SHARE_HEADLESS_HELPER") == "1" {
 		main()
@@ -124,6 +178,7 @@ func TestHeadlessProcessSmoke(t *testing.T) {
 
 	dataDir := filepath.Join(t.TempDir(), "headless-runtime")
 	agentPort := reserveTCPPort(t)
+	localHTTPPort := reserveTCPPort(t)
 	acceleratedPort := reserveTCPPort(t)
 	discoveryPort := reserveUDPPort(t)
 
@@ -132,6 +187,7 @@ func TestHeadlessProcessSmoke(t *testing.T) {
 		"MESSAGE_SHARE_HEADLESS_HELPER=1",
 		"MESSAGE_SHARE_DATA_DIR="+dataDir,
 		"MESSAGE_SHARE_AGENT_TCP_PORT="+strconv.Itoa(agentPort),
+		"MESSAGE_SHARE_LOCAL_HTTP_PORT="+strconv.Itoa(localHTTPPort),
 		"MESSAGE_SHARE_ACCELERATED_DATA_PORT="+strconv.Itoa(acceleratedPort),
 		"MESSAGE_SHARE_DISCOVERY_UDP_PORT="+strconv.Itoa(discoveryPort),
 		"MESSAGE_SHARE_DISCOVERY_LISTEN_ADDR=127.0.0.1:"+strconv.Itoa(discoveryPort),
@@ -164,6 +220,7 @@ func TestHeadlessProcessSmoke(t *testing.T) {
 	waitForPath(t, filepath.Join(dataDir, "config.json"), 8*time.Second, &output)
 	waitForPath(t, filepath.Join(dataDir, "local-device.json"), 8*time.Second, &output)
 	waitForPath(t, filepath.Join(dataDir, "message-share.db"), 8*time.Second, &output)
+	waitForHTTPReady(t, "http://127.0.0.1:"+strconv.Itoa(localHTTPPort)+"/api/bootstrap", 8*time.Second, &output)
 
 	assertProcessStillRunning(t, exitCh, &output)
 	time.Sleep(300 * time.Millisecond)
@@ -186,6 +243,24 @@ func waitForPath(t *testing.T, path string, timeout time.Duration, output *bytes
 	}
 
 	t.Fatalf("path %s was not created in time\noutput:\n%s", path, output.String())
+}
+
+func waitForHTTPReady(t *testing.T, url string, timeout time.Duration, output *bytes.Buffer) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		response, err := http.Get(url)
+		if err == nil {
+			_ = response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatalf("url %s was not ready in time\noutput:\n%s", url, output.String())
 }
 
 func assertProcessStillRunning(t *testing.T, exitCh <-chan error, output *bytes.Buffer) {
@@ -251,3 +326,17 @@ func (s *stubRuntimeHost) Close(context.Context) error {
 func (s *stubRuntimeHost) Errors() <-chan error {
 	return s.errs
 }
+
+func (s *stubRuntimeHost) RuntimeService() *appruntime.RuntimeService {
+	return nil
+}
+
+type stubLocalUIHost struct {
+	url string
+}
+
+func (s *stubLocalUIHost) Start(context.Context) error { return nil }
+
+func (s *stubLocalUIHost) Close(context.Context) error { return nil }
+
+func (s *stubLocalUIHost) URL() string { return s.url }

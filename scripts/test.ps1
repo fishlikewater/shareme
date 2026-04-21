@@ -123,6 +123,16 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw ("桌面 smoke 失败，退出码：{0}" -f $LASTEXITCODE)
     }
+
+    & "$repoRoot\scripts\build-agent.ps1"
+    if ($LASTEXITCODE -ne 0) {
+        throw ("Agent 构建失败，退出码：{0}" -f $LASTEXITCODE)
+    }
+
+    & "$repoRoot\scripts\smoke-agent.ps1" -SkipBuild
+    if ($LASTEXITCODE -ne 0) {
+        throw ("Agent smoke 失败，退出码：{0}" -f $LASTEXITCODE)
+    }
 }
 finally {
     $env:GOCACHE = $previousGoCache

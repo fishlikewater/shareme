@@ -9,6 +9,7 @@ import (
 
 type AppConfig struct {
 	AgentTCPPort           int
+	LocalHTTPPort          int
 	AcceleratedDataPort    int
 	AcceleratedEnabled     bool
 	DiscoveryUDPPort       int
@@ -52,6 +53,7 @@ func LoadDefault() (AppConfig, error) {
 
 	cfg := AppConfig{
 		AgentTCPPort:        19090,
+		LocalHTTPPort:       52350,
 		AcceleratedDataPort: 19092,
 		AcceleratedEnabled:  true,
 		DiscoveryUDPPort:    19091,
@@ -66,6 +68,9 @@ func LoadDefault() (AppConfig, error) {
 
 	if value, ok := lookupEnvInt("MESSAGE_SHARE_AGENT_TCP_PORT"); ok {
 		cfg.AgentTCPPort = value
+	}
+	if value, ok := lookupEnvInt("MESSAGE_SHARE_LOCAL_HTTP_PORT"); ok {
+		cfg.LocalHTTPPort = value
 	}
 	if value, ok := lookupEnvInt("MESSAGE_SHARE_ACCELERATED_DATA_PORT"); ok {
 		cfg.AcceleratedDataPort = value

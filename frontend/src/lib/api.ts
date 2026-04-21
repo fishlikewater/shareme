@@ -1,4 +1,5 @@
 import { createDesktopApiClient, hasDesktopApiBindings } from "./desktop-api";
+import { createLocalhostApiClient } from "./localhost-api";
 import type {
   AgentEvent,
   BootstrapSnapshot,
@@ -30,8 +31,21 @@ export interface LocalApi {
 }
 
 export function createDefaultLocalApi(): LocalApi {
-  if (!hasDesktopApiBindings()) {
-    throw new Error("desktop api bindings not available");
+  if (hasDesktopApiBindings()) {
+    return createDesktopApiClient();
   }
-  return createDesktopApiClient();
+  if (isLoopbackBrowser()) {
+    return createLocalhostApiClient({
+      origin: window.location.origin,
+    });
+  }
+  throw new Error("local api bindings not available");
+}
+
+function isLoopbackBrowser(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return new Set(["localhost", "127.0.0.1", "[::1]"]).has(window.location.hostname);
 }

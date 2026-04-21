@@ -185,7 +185,7 @@ export function ChatPane({
                 <span className="ms-eyebrow">极速路径</span>
                 <h3 className="ms-accelerated-card__title">大文件直读本地磁盘</h3>
                 <p className="ms-accelerated-card__copy">
-                  由桌面宿主直接读取磁盘文件，减少中转和重复落盘。
+                  由本机端直接读取磁盘文件，减少中转和重复落盘。
                 </p>
               </div>
               <button

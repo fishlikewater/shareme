@@ -1,134 +1,40 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AgentEvent } from "./types";
 
-type FetchLike = typeof fetch;
+class MockEventSource {
+  public onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  public onerror: ((event: Event) => void) | null = null;
+  public closed = false;
 
-class FakeEventSource {
-  static instances: FakeEventSource[] = [];
+  public constructor(public readonly url: string) {}
 
-  readonly close = vi.fn(() => {
-    this.closed = true;
-  });
-
-  closed = false;
-  onmessage: ((event: MessageEvent<string>) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-
-  constructor(readonly url: string) {
-    FakeEventSource.instances.push(this);
+  emit(payload: AgentEvent) {
+    this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(payload) }));
   }
 
-  emitMessage(event: AgentEvent) {
-    this.onmessage?.(
-      new MessageEvent("message", {
-        data: JSON.stringify(event),
-      }),
-    );
-  }
-
-  emitError() {
+  fail() {
     this.onerror?.(new Event("error"));
   }
-}
 
-function jsonResponse(payload: unknown): Response {
-  return new Response(JSON.stringify(payload), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+  close() {
+    this.closed = true;
+  }
 }
 
 describe("createLocalhostApiClient", () => {
-  afterEach(() => {
-    FakeEventSource.instances = [];
-    vi.useRealTimers();
-  });
-
-  it("maps localhost JSON endpoints to the expected API routes", async () => {
-    const fetchImpl = vi
-      .fn<FetchLike>()
-      .mockResolvedValueOnce(
-        jsonResponse({
-          localDeviceName: "Local Browser",
-          health: { status: "ok", discovery: "broadcast-ok", localAPIReady: true },
-          peers: [],
-          pairings: [],
-          conversations: [],
-          messages: [],
-          transfers: [],
-          eventSeq: 4,
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          pairingId: "pair-1",
-          peerDeviceId: "peer-1",
-          peerDeviceName: "Peer One",
-          shortCode: "123456",
-          status: "pending",
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          pairingId: "pair-1",
-          peerDeviceId: "peer-1",
-          peerDeviceName: "Peer One",
-          shortCode: "123456",
-          status: "confirmed",
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          messageId: "msg-1",
-          conversationId: "conv-peer-1",
-          direction: "outgoing",
-          kind: "text",
-          body: "hello",
-          status: "sent",
-          createdAt: "2026-04-20T10:00:00Z",
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          localFileId: "lf-1",
-          displayName: "archive.iso",
-          size: 42,
-          acceleratedEligible: true,
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          transferId: "tx-1",
-          messageId: "msg-file-1",
-          fileName: "archive.iso",
-          fileSize: 42,
-          state: "preparing",
-          createdAt: "2026-04-20T10:01:00Z",
-          direction: "outgoing",
-          bytesTransferred: 0,
-          progressPercent: 0,
-          rateBytesPerSec: 0,
-          etaSeconds: null,
-          active: true,
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          conversationId: "conv-peer-1",
-          messages: [],
-          hasMore: true,
-          nextCursor: "cursor-2",
-        }),
-      );
-
+  it("将 localhost API 映射到约定的 endpoints", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+      text: async () => "",
+    });
     const { createLocalhostApiClient } = await import("./localhost-api");
     const api = createLocalhostApiClient({
-      fetch: fetchImpl,
-      eventSource: FakeEventSource as unknown as typeof EventSource,
-      location: new URL("http://127.0.0.1:18080/app"),
+      origin: "http://127.0.0.1:52350",
+      fetchFn,
+      createEventSource: vi.fn(),
+      pickFile: vi.fn(),
     });
 
     await api.bootstrap();
@@ -136,156 +42,144 @@ describe("createLocalhostApiClient", () => {
     await api.confirmPairing("pair-1");
     await api.sendText("peer-1", "hello");
     await api.pickLocalFile();
-    await api.sendAcceleratedFile("peer-1", "lf-1");
-    await api.listMessageHistory("conv-peer-1", "cursor-1");
+    await api.sendAcceleratedFile("peer-1", "local-file-1");
+    await api.listMessageHistory("conv-1", "cursor/1");
 
-    expect(fetchImpl).toHaveBeenNthCalledWith(1, "http://127.0.0.1:18080/api/bootstrap", undefined);
-    expect(fetchImpl).toHaveBeenNthCalledWith(2, "http://127.0.0.1:18080/api/pairings/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ peerDeviceId: "peer-1" }),
-    });
-    expect(fetchImpl).toHaveBeenNthCalledWith(3, "http://127.0.0.1:18080/api/pairings/confirm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pairingId: "pair-1" }),
-    });
-    expect(fetchImpl).toHaveBeenNthCalledWith(4, "http://127.0.0.1:18080/api/messages/text", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ peerDeviceId: "peer-1", body: "hello" }),
-    });
-    expect(fetchImpl).toHaveBeenNthCalledWith(5, "http://127.0.0.1:18080/api/local-files/pick", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    expect(fetchImpl).toHaveBeenNthCalledWith(6, "http://127.0.0.1:18080/api/transfers/accelerated", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ peerDeviceId: "peer-1", localFileId: "lf-1" }),
-    });
-    expect(fetchImpl).toHaveBeenNthCalledWith(
-      7,
-      "http://127.0.0.1:18080/api/messages/history?conversationId=conv-peer-1&beforeCursor=cursor-1",
-      undefined,
-    );
+    expect(fetchFn.mock.calls).toEqual([
+      [
+        "http://127.0.0.1:52350/api/bootstrap",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "Content-Type": "application/json",
+          }),
+        }),
+      ],
+      [
+        "http://127.0.0.1:52350/api/pairings",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ peerDeviceId: "peer-1" }),
+        }),
+      ],
+      [
+        "http://127.0.0.1:52350/api/pairings/pair-1/confirm",
+        expect.objectContaining({
+          method: "POST",
+        }),
+      ],
+      [
+        "http://127.0.0.1:52350/api/peers/peer-1/messages/text",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ body: "hello" }),
+        }),
+      ],
+      [
+        "http://127.0.0.1:52350/api/local-files/pick",
+        expect.objectContaining({
+          method: "POST",
+        }),
+      ],
+      [
+        "http://127.0.0.1:52350/api/peers/peer-1/transfers/accelerated",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ localFileId: "local-file-1" }),
+        }),
+      ],
+      [
+        "http://127.0.0.1:52350/api/conversations/conv-1/messages?beforeCursor=cursor%2F1",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "Content-Type": "application/json",
+          }),
+        }),
+      ],
+    ]);
   });
 
-  it("uploads normal files with browser multipart form data", async () => {
-    const fetchImpl = vi.fn<FetchLike>().mockResolvedValue(
-      jsonResponse({
-        transferId: "tx-1",
-        messageId: "msg-file-1",
-        fileName: "demo.txt",
-        fileSize: 5,
-        state: "sending",
-        createdAt: "2026-04-20T10:01:00Z",
-        direction: "outgoing",
-        bytesTransferred: 0,
-        progressPercent: 0,
-        rateBytesPerSec: 0,
-        etaSeconds: null,
-        active: true,
-      }),
-    );
-
-    const file = new File(["hello"], "demo.txt", { type: "text/plain" });
-    const input = document.createElement("input");
-    Object.defineProperty(input, "files", {
-      configurable: true,
-      value: [file],
+  it("普通文件发送直接走浏览器选文件加 multipart 上传", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ transferId: "tx-1", fileName: "demo.txt" }),
+      text: async () => "",
     });
-    Object.defineProperty(input, "click", {
-      configurable: true,
-      value: () => {
-        input.dispatchEvent(new Event("change"));
-      },
-    });
-
+    const pickedFile = new File(["hello"], "demo.txt", { type: "text/plain" });
+    const pickFile = vi.fn().mockResolvedValue(pickedFile);
     const { createLocalhostApiClient } = await import("./localhost-api");
     const api = createLocalhostApiClient({
-      fetch: fetchImpl,
-      eventSource: FakeEventSource as unknown as typeof EventSource,
-      location: new URL("http://localhost:18080/app"),
-      createFileInput: () => input,
+      origin: "http://127.0.0.1:52350",
+      fetchFn,
+      createEventSource: vi.fn(),
+      pickFile,
     });
 
     await api.sendFile("peer-1");
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, options] = fetchImpl.mock.calls[0];
-    expect(url).toBe("http://localhost:18080/api/transfers/file");
-    expect(options?.method).toBe("POST");
-    expect(options?.body).toBeInstanceOf(FormData);
-    expect(options?.headers).toBeUndefined();
+    expect(pickFile).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledWith(
+      "http://127.0.0.1:52350/api/peers/peer-1/transfers/browser-upload",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.any(FormData),
+      }),
+    );
 
-    const form = options?.body as FormData;
-    expect(form.get("peerDeviceId")).toBe("peer-1");
-    expect(form.get("file")).toBe(file);
+    const form = fetchFn.mock.calls[0]?.[1]?.body;
+    expect(form).toBeInstanceOf(FormData);
+    const uploadedFile = (form as FormData).get("file");
+    expect(uploadedFile).toBeInstanceOf(File);
+    expect((uploadedFile as File).name).toBe(pickedFile.name);
+    expect((uploadedFile as File).size).toBe(pickedFile.size);
+    expect((form as FormData).get("fileSize")).toBe(String(pickedFile.size));
+    expect([...((form as FormData).keys())]).toEqual(["fileSize", "file"]);
   });
 
-  it("deduplicates SSE events by eventSeq and reconnects from the latest cursor", async () => {
-    vi.useFakeTimers();
-
+  it("SSE 基于 eventSeq 去重，并在 reconnect 后从最新序号续接", async () => {
+    const fetchFn = vi.fn();
+    const sources: MockEventSource[] = [];
     const { createLocalhostApiClient } = await import("./localhost-api");
     const api = createLocalhostApiClient({
-      fetch: vi.fn<FetchLike>(),
-      eventSource: FakeEventSource as unknown as typeof EventSource,
-      location: new URL("http://127.0.0.1:18080/app"),
-      reconnectDelayMs: 1000,
+      origin: "http://127.0.0.1:52350",
+      fetchFn,
+      createEventSource: (url) => {
+        const source = new MockEventSource(url);
+        sources.push(source);
+        return source as unknown as EventSource;
+      },
+      pickFile: vi.fn(),
     });
 
-    const received: AgentEvent[] = [];
+    const received: number[] = [];
     const subscription = api.subscribeEvents({
-      lastEventSeq: 5,
-      onEvent: (event) => {
-        received.push(event);
+      lastEventSeq: 7,
+      onEvent(event) {
+        received.push(event.eventSeq);
       },
     });
 
-    expect(FakeEventSource.instances).toHaveLength(1);
-    expect(FakeEventSource.instances[0]?.url).toBe("http://127.0.0.1:18080/api/events?afterSeq=5");
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.url).toBe("http://127.0.0.1:52350/api/events/stream?afterSeq=7");
 
-    FakeEventSource.instances[0]?.emitMessage({
-      eventSeq: 6,
-      kind: "peer.updated",
-      payload: { deviceId: "peer-1" },
-    });
-    FakeEventSource.instances[0]?.emitMessage({
-      eventSeq: 6,
-      kind: "peer.updated",
-      payload: { deviceId: "peer-1", duplicate: true },
-    });
-    FakeEventSource.instances[0]?.emitMessage({
-      eventSeq: 4,
-      kind: "peer.updated",
-      payload: { deviceId: "peer-old" },
-    });
+    sources[0]?.emit({ eventSeq: 8, kind: "peer.updated", payload: { deviceId: "peer-1" } });
+    sources[0]?.emit({ eventSeq: 8, kind: "peer.updated", payload: { deviceId: "peer-1" } });
+    sources[0]?.emit({ eventSeq: 9, kind: "health.updated", payload: { status: "ok" } });
 
-    expect(received.map((event) => event.eventSeq)).toEqual([6]);
-
-    FakeEventSource.instances[0]?.emitError();
-    await vi.advanceTimersByTimeAsync(1000);
-
-    expect(FakeEventSource.instances).toHaveLength(2);
-    expect(FakeEventSource.instances[0]?.close).toHaveBeenCalledTimes(1);
-    expect(FakeEventSource.instances[1]?.url).toBe("http://127.0.0.1:18080/api/events?afterSeq=6");
-
-    FakeEventSource.instances[1]?.emitMessage({
-      eventSeq: 7,
-      kind: "transfer.updated",
-      payload: { transferId: "tx-1" },
-    });
-    expect(received.map((event) => event.eventSeq)).toEqual([6, 7]);
+    expect(received).toEqual([8, 9]);
 
     subscription.reconnect();
 
-    expect(FakeEventSource.instances).toHaveLength(3);
-    expect(FakeEventSource.instances[1]?.close).toHaveBeenCalledTimes(1);
-    expect(FakeEventSource.instances[2]?.url).toBe("http://127.0.0.1:18080/api/events?afterSeq=7");
+    expect(sources).toHaveLength(2);
+    expect(sources[0]?.closed).toBe(true);
+    expect(sources[1]?.url).toBe("http://127.0.0.1:52350/api/events/stream?afterSeq=9");
+
+    sources[1]?.emit({ eventSeq: 9, kind: "health.updated", payload: { status: "stale" } });
+    sources[1]?.emit({ eventSeq: 10, kind: "transfer.updated", payload: { transferId: "tx-1" } });
+
+    expect(received).toEqual([8, 9, 10]);
 
     subscription.close();
-    expect(FakeEventSource.instances[2]?.close).toHaveBeenCalledTimes(1);
+
+    expect(sources[1]?.closed).toBe(true);
   });
 });

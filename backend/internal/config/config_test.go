@@ -318,6 +318,9 @@ func TestDefaultConfigUsesFixedPorts(t *testing.T) {
 	if cfg.AgentTCPPort != 19090 {
 		t.Fatalf("expected tcp port 19090, got %d", cfg.AgentTCPPort)
 	}
+	if cfg.LocalHTTPPort != 52350 {
+		t.Fatalf("expected local http port 52350, got %d", cfg.LocalHTTPPort)
+	}
 	if cfg.AcceleratedDataPort != 19092 {
 		t.Fatalf("expected accelerated data port 19092, got %d", cfg.AcceleratedDataPort)
 	}
@@ -337,6 +340,7 @@ func TestDefaultConfigUsesFixedPorts(t *testing.T) {
 
 func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
 	t.Setenv("MESSAGE_SHARE_AGENT_TCP_PORT", "52351")
+	t.Setenv("MESSAGE_SHARE_LOCAL_HTTP_PORT", "52354")
 	t.Setenv("MESSAGE_SHARE_ACCELERATED_DATA_PORT", "52353")
 	t.Setenv("MESSAGE_SHARE_ACCELERATED_ENABLED", "false")
 	t.Setenv("MESSAGE_SHARE_DISCOVERY_UDP_PORT", "52352")
@@ -348,6 +352,9 @@ func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
 	cfg := Default()
 	if cfg.AgentTCPPort != 52351 {
 		t.Fatalf("expected overridden tcp port, got %d", cfg.AgentTCPPort)
+	}
+	if cfg.LocalHTTPPort != 52354 {
+		t.Fatalf("expected overridden local http port, got %d", cfg.LocalHTTPPort)
 	}
 	if cfg.AcceleratedDataPort != 52353 {
 		t.Fatalf("expected overridden accelerated data port, got %d", cfg.AcceleratedDataPort)

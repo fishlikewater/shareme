@@ -27,7 +27,7 @@ export function HealthBanner({ health, lastEventSeq }: HealthBannerProps) {
           ))}
         </div>
       ) : (
-        <p className="ms-health__ok-copy">桌面运行时在线，设备发现与消息同步都已接入当前界面。</p>
+        <p className="ms-health__ok-copy">本机服务在线，设备发现与消息同步都已接入当前界面。</p>
       )}
     </section>
   );
@@ -35,7 +35,7 @@ export function HealthBanner({ health, lastEventSeq }: HealthBannerProps) {
 
 function resolveHealthHeadline(status: string): string {
   if (status === "ok") {
-    return "桌面运行时已就绪";
+    return "本机服务已就绪";
   }
   if (status === "degraded") {
     return "网络状态需要关注";

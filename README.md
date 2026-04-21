@@ -246,3 +246,43 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-desktop.ps1 -Platform w
 - [Wails 桌面运行时验证记录](docs/testing/wails-desktop-runtime.md)
 - [Windows 局域网冒烟矩阵](docs/testing/windows-lan-matrix.md)
 - [OpenSpec 与 superpowers 协作流程](docs/process/openspec-superpowers-workflow.md)
+
+## Headless Agent + Localhost Web UI
+
+除正式的 Wails 桌面入口外，仓库还提供一条兼容入口：`backend/cmd/message-share-agent`。
+
+这条入口会启动无窗口 agent，并在本机提供 localhost Web UI：
+
+- 默认访问地址：`http://127.0.0.1:52350/`
+- 只允许本机 loopback 访问，不对局域网其他机器开放
+- 前端仍复用同一套 React UI，不维护第二套页面
+- 普通文件发送走浏览器 `multipart/form-data`
+- 极速发送继续走 agent 原生本地文件选择 + `localFileId`
+
+### Windows 构建
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-agent.ps1
+```
+
+### Windows 冒烟
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-agent.ps1
+```
+
+### macOS / Linux 构建
+
+```bash
+./scripts/build-agent.sh
+```
+
+### macOS / Linux 冒烟
+
+```bash
+./scripts/smoke-agent.sh
+```
+
+更多验证细节见：
+
+- [Agent localhost runtime 验证](docs/testing/agent-localhost-runtime.md)

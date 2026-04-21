@@ -349,7 +349,7 @@ export default function AppShell({ api }: AppProps) {
         <div className="ms-shell">
           <section className="ms-splash ms-splash--error">
             <span className="ms-eyebrow">Connection Error</span>
-            <h1 className="ms-splash__title">无法启动桌面运行时</h1>
+            <h1 className="ms-splash__title">无法连接本机服务</h1>
             <p className="ms-splash__body">{errorMessage}</p>
           </section>
         </div>
@@ -364,7 +364,7 @@ export default function AppShell({ api }: AppProps) {
           <section className="ms-splash">
             <span className="ms-eyebrow">LAN P2P Share</span>
             <h1 className="ms-splash__title">一页直传</h1>
-            <p className="ms-splash__body">正在启动桌面运行时</p>
+            <p className="ms-splash__body">正在连接本机 Message Share 服务</p>
           </section>
         </div>
       </main>

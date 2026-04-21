@@ -35,3 +35,15 @@
 #### Scenario: 退出时有序释放资源
 - **WHEN** 用户关闭桌面应用
 - **THEN** 系统必须有序关闭窗口、监听端口、数据库连接与后台服务，而不得留下独立运行的本地 UI 入口进程
+
+### Requirement: 系统若提供 headless 兼容入口则必须复用同一运行时核心
+
+系统若提供无窗口的 headless 兼容入口，该入口 MUST 复用与桌面正式入口相同的局域网运行时核心、配置目录布局与资源释放语义；该入口 MUST NOT 重新引入要求用户手动访问 `localhost` 的浏览器 UI 主入口，也 MUST NOT 冒充一个可独立完成首次配对与主动发送的本地交互入口。
+
+#### Scenario: 以 headless 方式启动兼容入口
+- **WHEN** 用户启动 `backend/cmd/message-share-agent` 构建出的 headless 兼容入口
+- **THEN** 系统必须在不打开桌面窗口的前提下拉起局域网运行时，并使用与桌面正式入口一致的 `.message-share` 目录布局
+
+#### Scenario: headless 兼容入口退出时释放同一套资源
+- **WHEN** headless 兼容入口收到退出信号
+- **THEN** 系统必须有序关闭局域网监听、发现、数据库与运行时资源，而不得留下 localhost 浏览器 UI 进程或额外守护进程

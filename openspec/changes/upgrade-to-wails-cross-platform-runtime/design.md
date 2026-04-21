@@ -19,7 +19,7 @@
 
 **Goals:**
 
-- 以 Wails 作为唯一正式桌面 UI 宿主，替代手动访问 localhost 的使用方式。
+- 以 Wails 作为正式桌面 UI 宿主，替代手动访问 localhost 的使用方式，同时保留一个不承载浏览器 UI 的 headless 兼容入口。
 - 将默认配置与运行数据根目录统一为用户主目录下的 `.message-share`，并定义清晰的目录结构。
 - 让桌面 UI 在 Windows、macOS、Linux 三端都具备可运行、可构建、可分发的最小闭环。
 - 保留现有局域网发现、配对、TLS 对等通信与高性能文件传输核心，不在本轮引入协议重写。
@@ -34,19 +34,21 @@
 
 ## Decisions
 
-### 决策 1：采用“运行时核心 + Wails 桌面宿主”双层结构，移除 localhost UI 主入口
+### 决策 1：采用“运行时核心 + Wails 桌面宿主”双层结构，移除 localhost UI 主入口并保留 headless 兼容入口
 
 选择：
 
 - 保留现有 `app.RuntimeService`、`protocol`、`discovery`、`transfer`、`store` 等局域网核心能力，作为独立运行时核心。
 - 新增桌面宿主层，负责 Wails 生命周期、窗口管理、原生文件选择、前端事件推送与桌面命令绑定。
 - 现有 `backend/internal/api` 中仅服务本地 Web UI 的 HTTP 路由不再作为正式运行路径；桌面前端直接通过 Wails bridge 调用宿主层导出的命令。
+- 恢复 `backend/cmd/message-share-agent` 作为兼容 headless 入口，但该入口仅复用同一运行时核心，不重新引入 localhost 浏览器 UI，也不承担首次配对与主动发送的本地交互控制面。
 - 对等通信使用的 TLS HTTP server 继续保留，因为它属于设备间协议面，而非本地 UI 面。
 
 原因：
 
 - 现有 localhost UI 只是本地展示通道，不应继续占据主入口地位；桌面宿主替换它后，用户体验和分发方式才能真正成立。
 - 直接桥接 `RuntimeService` 能去掉本地 HTTP/WS/SSE 这一层序列化与鉴权样板，减少维护面。
+- 保留一个极小的 headless 兼容入口，可以兼顾后台运行、脚本化启动和无桌面环境，而不需要把旧浏览器 UI 链路整套带回；首次配对与主动操作继续收敛在桌面正式入口。
 - 保留局域网协议面可最大化复用既有传输、配对和发现能力，避免桌面化把核心传输也一并打散重做。
 
 备选方案：
@@ -150,20 +152,21 @@
 - 保留最小必要的脚本包装层，用于 Windows PowerShell 与 macOS/Linux shell 下的开发、测试和构建快捷入口。
 - 本次变更已清理或下线以下旧链路：
   - `backend/internal/webui` embed 静态资源目录与相关接线。
-  - `backend/cmd/message-share-agent` headless 主入口与相关独立启动路径。
+  - 旧的 localhost-only `backend/cmd/message-share-agent` 启动链路与其浏览器 UI 依赖。
   - 仅为 localhost UI 服务的 `dev-web.ps1`、`build-agent.ps1` 等旧脚本。
   - 生产路径上依赖 `MESSAGE_SHARE_LOCAL_API_ADDR` 与前端 `VITE_MESSAGE_SHARE_LOCAL_API_*` 的入口配置。
+- 本次收口后保留一个最小化的 `backend/cmd/message-share-agent` 兼容入口，用于无窗口运行同一局域网运行时核心。
 - 对等网络协议、测试夹具和需要 HTTP server 的设备间接口保留，不因 UI 宿主变化而删除。
 
 原因：
 
 - Wails 已经自带桌面构建主线，继续保留旧的“手搓 Go build + Vite build + embed”流程只会制造两套事实标准。
-- 清理冗余文件是这次需求的一部分，不应把旧入口永久以“兼容”名义留在生产代码中。
+- 清理冗余文件是这次需求的一部分，但保留一个最小 headless 兼容入口比保留整套 localhost 浏览器 UI 更符合当前交付与维护平衡。
 - 构建入口收敛之后，Windows/macOS/Linux 的交付、测试和文档才会真正统一。
 
 备选方案：
 
-- 双轨长期并存：兼容性最高，但复杂度长期失控。
+- 桌面正式入口 + 最小 headless 兼容入口并存：兼容性更好，但必须严格限制 headless 入口边界，避免重新滑回 localhost UI 双轨。
 - 一次性清空全部旧脚本：过于激进，不利于平滑迁移测试流程。
 
 ## Risks / Trade-offs
@@ -171,7 +174,7 @@
 - [Wails bridge 替换本地 HTTP 后，前端测试基建需要调整] → 保留统一客户端接口，允许测试继续注入 mock 客户端，不把组件测试绑死到 Wails 运行时。
 - [统一使用 `~/.message-share` 在 Windows 上不如 AppData“原生”] → 以明确产品要求为准，并保留环境变量覆盖与迁移日志，降低运维成本。
 - [首启迁移可能拖慢启动] → 采用显式迁移标记和按需迁移策略，大文件优先避免阻塞窗口首开。
-- [删除 localhost UI 主入口会影响现有脚本与调试方式] → 不再保留旧 localhost 客户端实现；若未来确需协议层夹具，应以显式测试工具独立承载，而不是继续挂在当前桌面前端主线上。
+- [删除 localhost UI 主入口会影响现有脚本与调试方式] → 不再保留旧 localhost 客户端实现；通过最小 headless 兼容入口承接后台运行和调试需求，而不是继续挂回浏览器 UI 主线。
 - [Wails 引入新的桌面依赖与三端打包复杂度] → 将平台差异集中在宿主层与构建脚本，运行时核心保持平台无关。
 - [普通文件发送去掉浏览器上传中转后，会改变部分前端接口语义] → 通过统一客户端接口屏蔽差异，前端页面仍面向“选择文件并发送”的同一交互模型。
 
@@ -182,7 +185,7 @@
 3. 用 Wails bridge 替换本地 HTTP UI 主入口，迁移文件选择、启动 Bootstrap、命令调用和事件订阅。
 4. 将普通文件发送改为桌面宿主直读本地文件，消除“前端上传到本机桌面宿主临时文件”的重复落盘。
 5. 接入 Windows、macOS、Linux 的构建与启动脚本，完成三端 smoke 流程。
-6. 清理旧 embed Web UI、旧入口脚本与不再使用的前端环境变量接线。
+6. 清理旧 embed Web UI、旧 localhost 入口脚本与不再使用的前端环境变量接线，并恢复最小化 headless 兼容入口。
 7. 若桌面化上线后发现严重回归，可短期回退到 legacy 分支发版；同一二进制内不保留新的正式双入口模式。
 
 ## Open Questions

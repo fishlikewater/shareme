@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把当前 “Go agent + localhost Web UI” 升级为基于 Wails 的桌面应用，默认使用用户主目录 `.message-share` 作为配置与运行目录，并完成 Windows、macOS、Linux 的最小可交付闭环。
+**Goal:** 把当前 “Go agent + localhost Web UI” 升级为基于 Wails 的桌面应用，默认使用用户主目录 `.message-share` 作为配置与运行目录，保留一个最小化的 headless 兼容入口，并完成 Windows、macOS、Linux 的最小可交付闭环。
 
-**Architecture:** 保留现有局域网发现、配对、TLS 对等通信、消息与文件传输核心，只把本地 UI 宿主从 loopback HTTP 改成 Wails 桌面壳。`backend` 目录成为 Wails Go 宿主根，`frontend` 保持现有 React/Vite 工程，通过 Wails 配置显式引用；本地命令与事件由桌面 bridge 直接调用/订阅运行时核心，不再经过 localhost API。
+**Architecture:** 保留现有局域网发现、配对、TLS 对等通信、消息与文件传输核心，只把正式本地 UI 宿主从 loopback HTTP 改成 Wails 桌面壳。`backend` 目录成为 Wails Go 宿主根，`frontend` 保持现有 React/Vite 工程，通过 Wails 配置显式引用；本地命令与事件由桌面 bridge 直接调用/订阅运行时核心，不再经过 localhost API。同时恢复 `backend/cmd/message-share-agent` 作为无窗口 headless 兼容入口，复用同一运行时核心但不再承载浏览器 UI。
 
 **Tech Stack:** Go 1.25、Wails v2、React 18、TypeScript、Vite、Vitest、SQLite、PowerShell、POSIX shell
 
@@ -19,7 +19,7 @@
 ## 实施约束
 
 - 以 `openspec/changes/upgrade-to-wails-cross-platform-runtime/tasks.md` 为任务真源，顺序保持一致，完成即回写 checkbox。
-- 不再保留 localhost Web UI 作为正式入口；测试辅助可以存在，但不能成为生产路径。
+- 不再保留 localhost Web UI 作为正式入口；允许保留最小化 headless 兼容入口，但不能重新引入浏览器 UI 生产路径。
 - 不引入第二套消息/传输状态模型；前端继续消费当前 `BootstrapSnapshot` / `AgentEvent` 语义。
 - 用户可编辑配置以 `.message-share/config.json` 为准；设备身份材料继续保存在 `.message-share/local-device.json`。
 - 仅保留必要文件，避免提交 Wails 自动生成且可再生的冗余产物。
@@ -78,7 +78,7 @@
 ### 重点修改文件
 
 - `backend/cmd/message-share-agent/main.go`
-  - 切到共享运行时初始化逻辑，只保留纯 agent/诊断入口。
+  - 复用共享运行时初始化逻辑，保留无窗口 agent/诊断兼容入口，但不恢复 localhost 浏览器 UI。
 - `backend/internal/config/config.go`
   - 基于 `.message-share` 布局与 `config.json` 输出运行时配置。
 - `backend/internal/config/download_dir.go`
@@ -127,7 +127,7 @@
 
 ## Task 1: Wails 桌面宿主骨架与共享运行时
 
-**对应 OpenSpec：** 1.1、1.2、1.3、1.4
+**对应 OpenSpec：** 1.1、1.2、1.3、1.4、1.5
 
 **Files:**
 - Create: `backend/main.go`
@@ -1284,7 +1284,7 @@ git commit -m "chore: add desktop scripts and remove legacy web ui"
 
 ## Task 7: 文档、全量验证与 OpenSpec 回写
 
-**对应 OpenSpec：** 4.5、5.1、5.2、5.3、5.4
+**对应 OpenSpec：** 4.5、4.6、5.1、5.2、5.3、5.4、5.5
 
 **Files:**
 - Create: `docs/testing/wails-desktop-runtime.md`
@@ -1368,20 +1368,24 @@ desktop smoke succeeds
 - [x] 1.2 将当前 agent 启动流程拆分为可复用的运行时核心初始化逻辑，保留局域网发现、配对、对等监听与存储能力
 - [x] 1.3 移除正式运行路径中对 localhost Web UI server 的依赖，并改为由桌面宿主管理窗口生命周期与运行时生命周期
 - [x] 1.4 建立桌面事件桥接，把现有配对、消息、传输与健康状态事件映射到 Wails 事件通道
+- [x] 1.5 恢复无窗口 headless 兼容入口，复用同一运行时核心且不重新引入 localhost 浏览器 UI
+- [x] 4.6 更新说明文档，明确桌面正式入口与 headless 兼容入口的职责边界与构建方式
+- [x] 5.5 增加 headless 兼容入口的命令层测试与构建验证，确保其可独立编译运行
 ```
 
 - [x] **Step 4: 完成文档与状态回写收口**
 
 ```bash
-git add docs/testing/wails-desktop-runtime.md openspec/changes/upgrade-to-wails-cross-platform-runtime/tasks.md
-git commit -m "docs: record desktop runtime verification"
+git add README.md docs/testing/wails-desktop-runtime.md docs/superpowers/plans/2026-04-18-upgrade-to-wails-cross-platform-runtime-implementation.md openspec/changes/upgrade-to-wails-cross-platform-runtime/tasks.md openspec/changes/upgrade-to-wails-cross-platform-runtime/proposal.md openspec/changes/upgrade-to-wails-cross-platform-runtime/design.md openspec/changes/upgrade-to-wails-cross-platform-runtime/specs/desktop-shell-runtime/spec.md
+git commit -m "docs: restore headless runtime entry"
 ```
 
 ## 规格覆盖对照
 
 - `desktop-shell-runtime`
-  - Task 1 负责 Wails 宿主、窗口生命周期、bridge 主入口。
+  - Task 1 负责 Wails 宿主、窗口生命周期、bridge 主入口，以及 headless 兼容入口的共享运行时复用。
   - Task 4 负责桌面命令与事件桥接。
+  - Task 7 负责桌面正式入口与 headless 兼容入口的文档与验证收口。
 - `user-home-config-layout`
   - Task 2 负责 `.message-share` 布局、`config.json` 与设备名称同步。
   - Task 3 负责 legacy 迁移。

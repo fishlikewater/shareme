@@ -1,5 +1,7 @@
 # Wails Desktop Runtime 验证记录
 
+说明：当前正式用户入口是 Wails 桌面应用；本文同时记录与之共享同一运行时核心的 headless 兼容入口验证结果。
+
 ## 默认目录
 
 - 配置文件：`~/.message-share/config.json`
@@ -29,6 +31,22 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke-desktop.ps1 -SkipBuild
 ./scripts/build-desktop.sh linux/amd64
 ./scripts/smoke-desktop.sh linux/amd64
 ```
+
+## Headless 兼容入口
+
+```powershell
+Set-Location .\backend
+$env:GOCACHE='E:\Projects\IdeaProjects\person\message-share\.cache\go-build'
+$env:GOTELEMETRY='off'
+go test ./cmd/message-share-agent
+go build -o '.\build\bin\message-share-agent.exe' .\cmd\message-share-agent
+```
+
+说明：
+
+- 该入口只拉起局域网运行时，不打开桌面窗口，也不恢复 localhost 浏览器 UI。
+- 该入口与桌面正式入口共用 `.message-share` 目录布局和同一套运行时核心。
+- 该入口不提供本地交互控制面；fresh 节点上的首次配对、手动确认配对、主动发送仍以桌面正式入口为准。
 
 ## 2026-04-19 Fresh 验证结果
 
@@ -68,6 +86,20 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.12.0 build -clean -platform win
 
 - Wails `windows/amd64` 构建通过。
 - 生成交付文件 `backend/build/bin/message-share.exe`。
+
+```powershell
+Set-Location .\backend
+$env:GOCACHE='E:\Projects\IdeaProjects\person\message-share\.cache\go-build'
+$env:GOTELEMETRY='off'
+go test ./cmd/message-share-agent
+go build -o '.\build\bin\message-share-agent.exe' .\cmd\message-share-agent
+```
+
+结果：
+
+- headless 兼容入口测试通过。
+- `go test ./cmd/message-share-agent` 中的进程级 smoke 已验证：隔离数据目录下可完成 `config.json`、`local-device.json`、`message-share.db` 初始化，且进程能成功拉起。
+- 生成兼容入口产物 `backend/build/bin/message-share-agent.exe`。
 
 ```powershell
 Set-Location ..
@@ -126,3 +158,4 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.12.0 build -clean -platform dar
 - `smoke-desktop` 在 marker 出现后还会执行一个短暂稳定窗口检查，避免“刚 ready 就立刻退出”的瞬时假阳性。
 - 运行目录会在用户主目录下或显式覆盖目录下初始化 `config.json`。
 - 当前 Windows 环境的 `scripts/test.ps1` 已纳入 Linux / macOS 静态编译校验，但无法替代目标平台上的 Wails 真机构建与 smoke。
+- headless 兼容入口的验收以 `go test ./cmd/message-share-agent` 与独立 `go build` 通过为准；前者已覆盖进程级启动 smoke，但该入口仍不参与桌面 UI smoke 判定，也不作为首次配对的交互入口。

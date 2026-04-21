@@ -9,13 +9,13 @@
 - 引入 Wails 作为桌面壳，使用现有 React Web UI 作为桌面前端，替代当前依赖手动访问 `http://localhost` 的使用方式。
 - **BREAKING** 调整默认配置与运行数据根目录为用户主目录下的 `.message-share`，统一承载本地身份、数据库、下载回退目录、日志与桌面运行时所需文件。
 - 定义 Windows、macOS、Linux 三端统一的桌面运行时语义，包括目录布局、文件选择、窗口启动、构建产物与最小平台差异处理。
-- 重构启动与 UI 接线：保留局域网传输核心能力，拆分可复用运行时核心与桌面壳绑定层，移除旧的 embed Web UI 与 localhost-only 主入口链路。
+- 重构启动与 UI 接线：保留局域网传输核心能力，拆分可复用运行时核心与桌面壳绑定层，移除旧的 embed Web UI 与 localhost-only 浏览器主入口链路，同时保留一个无窗口 headless 兼容入口，用于已初始化节点的后台运行与调试。
 - 清理与新桌面运行时重复或无效的历史文件、脚本和接线代码，收敛目录结构与模块职责，以可读性和维护性为首要目标。
 
 ## Capabilities
 
 ### New Capabilities
-- `desktop-shell-runtime`: 定义基于 Wails 的桌面壳启动、窗口内 UI 承载、前后端桥接与本地桌面主入口语义。
+- `desktop-shell-runtime`: 定义基于 Wails 的桌面壳启动、窗口内 UI 承载、前后端桥接、正式桌面主入口语义，以及可选 headless 兼容入口的边界。
 - `user-home-config-layout`: 定义默认用户根目录 `.message-share` 的目录结构、初始化规则、兼容迁移与运行时文件布局。
 - `desktop-platform-support`: 定义 Windows、macOS、Linux 三端的桌面运行支持、平台差异适配与分发构建要求。
 
@@ -29,4 +29,4 @@
 - 受影响前端模块：`frontend` 构建入口、API 调用层、文件选择接线与桌面运行时桥接
 - 新增外部依赖与构建体系：Wails 桌面运行时、面向 Windows/macOS/Linux 的桌面构建脚本与产物组织
 - 受影响默认行为：应用启动入口、默认配置根目录、下载回退目录、本地文件选择调用路径
-- 受影响工程结构：旧 embed 静态资源链路、localhost-only UI 接线、重复脚本与冗余文件需要迁移或删除
+- 受影响工程结构：旧 embed 静态资源链路、localhost-only UI 接线、重复脚本与冗余文件需要迁移或删除，但保留最小化的 headless 兼容入口

@@ -90,36 +90,6 @@ npm run build
 Pop-Location
 ```
 
-## 5. 规格与执行协作
-
-**有行为变化的任务，统一采用 `OpenSpec + superpowers + Trellis` 协作流。**
-
-- `OpenSpec` 管正式变更文档：`proposal.md`、`design.md`、`specs/**/*.md`、`tasks.md` 与归档。
-- `superpowers` 管探索、计划、实施纪律、验证与评审。
-- `Trellis` 管执行上下文、任务目录、journal 留痕与多 Agent 协作入口。
-- `L0`：纯文档、测试、重构、工具调整；无用户可见行为、接口契约、数据结构变化，可直接进入 Trellis 执行。
-- `L1`：单模块或单能力的行为变化、错误语义变化、命令参数变化，必须先补齐 OpenSpec。
-- `L2`：跨前后端、桌面宿主、localhost agent、数据库、传输协议、安全边界或架构边界变化，必须补齐 OpenSpec design，并执行更严格验证与 review。
-- 方案讨论使用 `superpowers:brainstorming`，开发计划必须显式使用 `superpowers:writing-plans`。
-- `superpowers` 的计划必须与对应 `openspec/changes/<change>/tasks.md` 对齐；若任一方任务粒度或状态变化，另一方必须同步检查并更新。
-- 当前活跃变更使用 `openspec list --json` 查看。
-
-### Skill 修改约束
-
-- `SKILL.md` 应描述可复用的流程、判定规则、检查点与命令占位，不应写成某次任务的临时施工单。
-- 除非该 skill 明确就是当前项目专用能力，否则不要写入具体业务模块名、一次性任务复选项或缺乏泛化价值的文件路径。
-- 需要举例时，优先使用目录类型、场景类型或占位路径，而不是直接写某个项目独有文件。
-- 修改已有 skill 时，保持原文件语言一致：英文文件追加英文，中文文件追加中文；如需切换语言，应整体统一改写。
-
-## 6. 提交与验证口径
-
-- 业务代码由当前会话约定的执行者提交；未经用户明确要求，AI 不主动提交 git commit。
-- `.trellis/workspace`、`.trellis/tasks` 等元数据优先由脚本自动维护。
-- 不要在未验证的情况下声称“已完成”“已通过”“可交付”。
-- 影响桌面正式入口时，优先验证 `scripts/test.ps1` 或相应平台 `build-desktop` / `smoke-desktop`。
-- 影响 localhost agent 时，同时验证 `scripts/build-agent.*`、`scripts/smoke-agent.*` 或相关单元测试。
-- 影响 OpenSpec 工件时，至少执行 `openspec validate --strict --all` 或针对目标 change/spec 的严格校验。
-
 <!-- TRELLIS:START -->
 # Trellis Instructions
 

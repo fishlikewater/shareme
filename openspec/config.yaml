@@ -1,20 +1,25 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Project: Message Share, a LAN-focused desktop app for peer-to-peer text and file transfer.
+  Runtime: Wails v2 desktop app with Go 1.25 backend, React 18 + TypeScript + Vite frontend, SQLite local storage.
+  Compatibility entrypoint: backend/cmd/message-share-agent serves a loopback-only localhost Web UI at 127.0.0.1.
+  Data root: ~/.message-share by default; MESSAGE_SHARE_DATA_DIR overrides it.
+  Main Windows verification: powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1.
+  Frontend verification: run commands inside frontend/; npm test and npm run build are canonical local checks.
+  Backend verification: run commands inside backend/; go test -count=1 -p 1 ./... is the canonical unit check.
+  Process: OpenSpec owns behavior-change artifacts, superpowers owns design/planning discipline, Trellis owns execution context and journal.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - 明确用户可见行为、非目标、受影响入口（Wails 桌面、localhost agent、两者兼有）。
+    - 若不改变外部行为，应说明为何属于 L0。
+  design:
+    - 涉及 L2 时必须描述前端、Go runtime、Wails binding、localhost API、SQLite 或传输协议之间的数据流。
+    - 涉及文件传输、安全、存储迁移或事件流时，必须写出失败路径与恢复策略。
+  specs:
+    - 场景必须包含可验证的 MUST/SHALL 要求，避免只写原则。
+    - 跨层契约必须列出字段名、命令/API 名、错误语义和测试落点。
+  tasks:
+    - 任务保持高层里程碑粒度；细粒度执行步骤放入 docs/superpowers/plans 或 Trellis task。
+    - 每个实现任务必须带验证项，至少指向单元测试、构建、smoke 或手工验收之一。

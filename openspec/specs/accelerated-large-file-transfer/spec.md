@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+定义 Message Share 在已配对局域网设备之间执行大文件极速传输时的会话建立、分片发送、状态上报、失败回退与接收落盘要求。
+
+## Requirements
 
 ### Requirement: 系统必须为合格的大文件发送建立极速传输会话
 

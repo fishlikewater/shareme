@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+定义 `message-share-agent` 在无窗口模式下提供仅限本机访问的 localhost Web UI 兼容入口、API 能力、事件同步、文件发送与构建验证要求。
+
+## Requirements
 
 ### Requirement: 系统必须为 `message-share-agent` 提供仅限本机访问的 localhost Web UI 兼容入口
 

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+定义桌面 UI 通过 Wails 宿主发起原生文件选择、使用安全本地文件引用，并与极速发送链路衔接的要求。
+
+## Requirements
 
 ### Requirement: 系统必须允许桌面 UI 通过桌面宿主发起原生文件选择
 

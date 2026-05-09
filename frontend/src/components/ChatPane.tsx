@@ -115,15 +115,15 @@ export function ChatPane({
   const acceleratedBusy = pickingLocalFile || sendingAcceleratedFile;
 
   return (
-    <section className="ms-panel ms-chat-panel">
+    <section className="ms-panel ms-chat-panel" aria-label={peer ? `${peer.deviceName} 会话` : "会话工作区"}>
       <div className="ms-chat-header">
         <div>
-          <span className="ms-eyebrow">沟通中心</span>
-          <h2 className="ms-chat-title">{peer ? `连接 ${peer.deviceName}` : "请选择一台设备开始传输"}</h2>
+          <span className="ms-eyebrow">当前会话</span>
+          <h2 className="ms-chat-title">{peer ? peer.deviceName : "选择设备开始传输"}</h2>
           <p className="ms-chat-copy">{resolveChatCopy(peer)}</p>
         </div>
         {peer ? (
-          <div className="ms-badge-row">
+          <div className="ms-badge-row" aria-label="当前设备状态">
             <span className={`ms-badge ${peer.trusted ? "ms-badge--ok" : "ms-badge--warn"}`}>
               {peer.trusted ? "已信任" : "未信任"}
             </span>

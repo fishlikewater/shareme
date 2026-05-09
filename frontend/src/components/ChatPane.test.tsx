@@ -36,6 +36,9 @@ describe("ChatPane", () => {
       />,
     );
 
+    expect(screen.getByRole("heading", { name: trustedPeer.deviceName })).toBeInTheDocument();
+    expect(screen.getByLabelText("当前设备状态")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "选择文件" }));
 
     expect(onSendFile).toHaveBeenCalledTimes(1);

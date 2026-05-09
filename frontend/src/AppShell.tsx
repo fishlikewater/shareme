@@ -1,9 +1,8 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatPane } from "./components/ChatPane";
-import { HealthBanner } from "./components/HealthBanner";
 import { PairCodeDialog } from "./components/PairCodeDialog";
-import { TransferStatusBanner } from "./components/TransferStatusBanner";
+import { WorkbenchStatusPanel } from "./components/WorkbenchStatusPanel";
 import { createDefaultLocalApi, type LocalApi } from "./lib/api";
 import { notifyDesktopUiReady } from "./lib/desktop-api";
 import type {
@@ -63,6 +62,7 @@ export default function AppShell({ api }: AppProps) {
   const [commandError, setCommandError] = useState<string>();
   const [busyState, setBusyState] = useState<BusyState>(initialBusyState);
   const [pickedLocalFile, setPickedLocalFile] = useState<LocalFileSnapshot | null>(null);
+  const [deviceDockCollapsed, setDeviceDockCollapsed] = useState(false);
   const [historyStateByConversation, setHistoryStateByConversation] = useState<
     Record<string, ConversationHistoryState | undefined>
   >({});
@@ -372,9 +372,7 @@ export default function AppShell({ api }: AppProps) {
   }
 
   const discoveredCount = peers.length;
-  const trustedCount = peers.filter((peer) => peer.trusted).length;
   const readyCount = peers.filter((peer) => peer.trusted && peer.reachable).length;
-  const pendingCount = peers.filter((peer) => !peer.trusted).length;
 
   function handleSelectPeer(peer: PeerSummary) {
     setSelectedPeerId(peer.deviceId);
@@ -391,63 +389,49 @@ export default function AppShell({ api }: AppProps) {
   }
 
   return (
-    <main className="ms-app">
+    <div className="ms-app">
       <div className="ms-shell">
-        <section className="ms-hero">
-          <section className="ms-panel ms-hero__lead">
-            <span className="ms-eyebrow">LAN P2P Share</span>
-            <h1 className="ms-hero__title">一页直传</h1>
-            <p className="ms-hero__body">文字与文件都会直连传输，不经过云端。</p>
-            <div className="ms-hero__device">
-              <span className="ms-chip ms-chip--soft">本机设备</span>
-              <strong>{snapshot.localDeviceName}</strong>
+        <header className="ms-appbar" role="banner" aria-label="Message Share 工作台">
+          <div className="ms-appbar__identity">
+            <span className="ms-appbar__mark" aria-hidden="true">MS</span>
+            <div>
+              <span className="ms-eyebrow">Message Share</span>
+              <strong className="ms-appbar__title">传输工作台</strong>
+              <span className="ms-appbar__copy">文字与文件都会直连传输，不经过云端。</span>
             </div>
-          </section>
+          </div>
+          <div className="ms-appbar__meta">
+            <span className="ms-chip ms-chip--soft">本机设备</span>
+            <strong>{snapshot.localDeviceName}</strong>
+            <span className="ms-chip ms-chip--soft">已发现 {discoveredCount}</span>
+            <span className="ms-chip ms-chip--soft">
+              <span>已信任且可连接</span>
+              <strong className="ms-chip__count">{readyCount}</strong>
+            </span>
+          </div>
+        </header>
 
-          <section className="ms-hero__side">
-            <div className="ms-stat-grid">
-              <article className="ms-stat-card">
-                <span className="ms-stat-card__label">已发现</span>
-                <strong className="ms-stat-card__value">{discoveredCount}</strong>
-                <span className="ms-stat-card__hint">局域网设备</span>
-              </article>
-              <article className="ms-stat-card">
-                <span className="ms-stat-card__label">已配对</span>
-                <strong className="ms-stat-card__value">{trustedCount}</strong>
-                <span className="ms-stat-card__hint">可建立信任</span>
-              </article>
-              <article className="ms-stat-card">
-                <span className="ms-stat-card__label">可直传</span>
-                <strong className="ms-stat-card__value">{readyCount}</strong>
-                <span className="ms-stat-card__hint">已信任且可连接</span>
-              </article>
-              <article className="ms-stat-card">
-                <span className="ms-stat-card__label">待配对</span>
-                <strong className="ms-stat-card__value">{pendingCount}</strong>
-                <span className="ms-stat-card__hint">先建立信任</span>
-              </article>
-            </div>
-          </section>
-        </section>
-
-        <TransferStatusBanner transfers={activeTransfers} />
-        <HealthBanner health={snapshot.health} lastEventSeq={snapshot.eventSeq ?? 0} />
         {commandError ? (
           <section className="ms-command-error" role="alert">
             {commandError}
           </section>
         ) : null}
 
-        <section className="ms-layout">
+        <section
+          className={`ms-workbench${deviceDockCollapsed ? " is-dock-collapsed" : ""}`}
+          aria-label="传输工作台"
+        >
           <DiscoveryPage
             peers={peers}
             selectedPeerId={selectedPeer?.deviceId}
             onSelect={handleSelectPeer}
             localDeviceName={snapshot.localDeviceName}
             syncMode="点对点即时传输"
+            collapsed={deviceDockCollapsed}
+            onToggleCollapsed={() => setDeviceDockCollapsed((current) => !current)}
           />
 
-          <section className="ms-main-column" ref={mainColumnRef}>
+          <main className="ms-main-column" ref={mainColumnRef} aria-label="会话工作区">
             <ChatPane
               peer={selectedPeer}
               conversationId={selectedConversation?.conversationId}
@@ -472,10 +456,16 @@ export default function AppShell({ api }: AppProps) {
               onStartPairing={handleStartPairing}
               onConfirmPairing={handleConfirmPairing}
             />
-          </section>
+          </main>
+
+          <WorkbenchStatusPanel
+            health={snapshot.health}
+            lastEventSeq={snapshot.eventSeq ?? 0}
+            transfers={activeTransfers}
+          />
         </section>
       </div>
-    </main>
+    </div>
   );
 }
 

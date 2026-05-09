@@ -1,0 +1,44 @@
+{
+  "id": "modernize-workbench-ui",
+  "name": "modernize-workbench-ui",
+  "title": "Modernize Workbench UI",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-05-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

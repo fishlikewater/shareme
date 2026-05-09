@@ -7,11 +7,11 @@ type HealthBannerProps = {
 
 export function HealthBanner({ health, lastEventSeq }: HealthBannerProps) {
   return (
-    <section className={`ms-panel ms-health ms-health--${resolveHealthTone(health.status)}`}>
+    <section className={`ms-health ms-health--${resolveHealthTone(health.status)}`} aria-label="连接状态">
       <div className="ms-health__header">
         <div>
           <span className="ms-eyebrow">连接状态</span>
-          <h2 className="ms-health__title">{resolveHealthHeadline(health.status)}</h2>
+          <h3 className="ms-health__title">{resolveHealthHeadline(health.status)}</h3>
         </div>
         <div className="ms-health__chips">
           <span className="ms-chip ms-chip--soft">自动发现 {resolveDiscoveryLabel(health.discovery)}</span>

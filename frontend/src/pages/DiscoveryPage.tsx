@@ -8,6 +8,8 @@ type DiscoveryPageProps = {
   onSelect: (peer: PeerSummary) => void;
   localDeviceName: string;
   syncMode: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 };
 
 export function DiscoveryPage({
@@ -16,11 +18,19 @@ export function DiscoveryPage({
   onSelect,
   localDeviceName,
   syncMode,
+  collapsed,
+  onToggleCollapsed,
 }: DiscoveryPageProps) {
   return (
-    <aside className="ms-sidebar">
-      <DeviceList peers={peers} selectedPeerId={selectedPeerId} onSelect={onSelect} />
-      <SettingsPage localDeviceName={localDeviceName} syncMode={syncMode} />
+    <aside className={`ms-device-dock${collapsed ? " is-collapsed" : ""}`}>
+      <DeviceList
+        peers={peers}
+        selectedPeerId={selectedPeerId}
+        collapsed={collapsed}
+        onSelect={onSelect}
+        onToggleCollapsed={onToggleCollapsed}
+      />
+      {!collapsed ? <SettingsPage localDeviceName={localDeviceName} syncMode={syncMode} /> : null}
     </aside>
   );
 }

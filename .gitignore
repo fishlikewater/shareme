@@ -14,6 +14,8 @@ coverage/
 backend/*.exe
 backend/build/
 backend/frontend/dist/
+backend/cmd/message-share-agent/frontend/dist/
+dist/
 
 # 前端生成物与依赖
 frontend/node_modules/
@@ -21,6 +23,7 @@ frontend/wailsjs/
 frontend/package.json.md5
 frontend/tsconfig.tsbuildinfo
 node_modules/
+__pycache__/
 
 # 本地数据库
 *.db

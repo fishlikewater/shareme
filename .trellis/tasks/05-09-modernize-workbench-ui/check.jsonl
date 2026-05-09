@@ -1,0 +1,4 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check-frontend/SKILL.md", "reason": "Frontend check spec"}
+{"file": "openspec/changes/modernize-workbench-ui/specs/workbench-ui/spec.md", "reason": "Check against approved workbench UI requirements"}
+{"file": "docs/superpowers/plans/2026-05-09-modernize-workbench-ui.md", "reason": "Check against approved implementation plan"}

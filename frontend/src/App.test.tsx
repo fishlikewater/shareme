@@ -259,6 +259,11 @@ describe("App", () => {
 
     expect(screen.getByText("正在连接本机 Message Share 服务")).toBeInTheDocument();
     expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("banner", { name: "Message Share 工作台" })).toBeInTheDocument();
+    expect(screen.getByText("本机设备")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "设备 Dock" })).toBeInTheDocument();
+    expect(screen.getByRole("main", { name: "会话工作区" })).toBeInTheDocument();
+    expect(screen.queryByText("一页直传")).not.toBeInTheDocument();
     expect(screen.getByText("已发现 3 台设备")).toBeInTheDocument();
     expect(screen.getByText("文字与文件都会直连传输，不经过云端。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /办公室副机/ })).toHaveAttribute("aria-pressed", "true");
@@ -675,5 +680,24 @@ describe("App", () => {
 
     expect(bootstrapSpy).toHaveBeenCalledTimes(2);
     expect(within(list).getByText("body-00")).toBeInTheDocument();
+  });
+
+  it("可以折叠和展开设备 Dock，且不改变当前选中设备", async () => {
+    const api = new FakeApi(bootstrapSnapshot);
+
+    render(<App api={api} />);
+
+    expect(await screen.findByRole("navigation", { name: "设备 Dock" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /办公室副机/ })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起设备 Dock" }));
+
+    expect(screen.getByRole("navigation", { name: "设备 Dock" })).toHaveClass("is-collapsed");
+    expect(screen.getByRole("button", { name: /办公室副机/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "展开设备 Dock" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开设备 Dock" }));
+
+    expect(screen.getByRole("navigation", { name: "设备 Dock" })).not.toHaveClass("is-collapsed");
   });
 });

@@ -21,7 +21,7 @@ export function PairCodeDialog({
   const confirmedButPendingTrust = pairingStatus === "confirmed";
 
   return (
-    <aside className="ms-panel ms-pairing-card">
+    <section className="ms-panel ms-trust-task ms-pairing-card" aria-label="信任建立">
       <div className="ms-pairing-card__copy">
         <span className="ms-eyebrow">信任建立</span>
         <h3 className="ms-pairing-card__title">建立信任后再发送</h3>
@@ -63,7 +63,7 @@ export function PairCodeDialog({
           </span>
         ) : null}
       </div>
-    </aside>
+    </section>
   );
 }
 

@@ -9,12 +9,12 @@ import (
 	"syscall"
 	"time"
 
-	"message-share/backend/internal/api"
-	appruntime "message-share/backend/internal/app"
-	"message-share/backend/internal/config"
-	"message-share/backend/internal/frontendassets"
-	"message-share/backend/internal/localui"
-	runtimehost "message-share/backend/internal/runtime"
+	"shareme/backend/internal/api"
+	appruntime "shareme/backend/internal/app"
+	"shareme/backend/internal/config"
+	"shareme/backend/internal/frontendassets"
+	"shareme/backend/internal/localui"
+	runtimehost "shareme/backend/internal/runtime"
 )
 
 const shutdownTimeout = 5 * time.Second
@@ -73,7 +73,7 @@ func run(
 	defer shutdownLocalUI(localUI, logger)
 
 	logger.Printf(
-		"message-share-agent running: device=%s dataDir=%s tcp=%d discovery=%d accelerated=%d web=%s",
+		"shareme-agent running: device=%s dataDir=%s tcp=%d discovery=%d accelerated=%d web=%s",
 		cfg.DeviceName,
 		cfg.DataDir,
 		cfg.AgentTCPPort,

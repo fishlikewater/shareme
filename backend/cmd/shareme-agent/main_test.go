@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/api"
-	appruntime "message-share/backend/internal/app"
-	"message-share/backend/internal/config"
+	"shareme/backend/internal/api"
+	appruntime "shareme/backend/internal/app"
+	"shareme/backend/internal/config"
 )
 
 func TestRunReturnsConfigError(t *testing.T) {
@@ -75,7 +75,7 @@ func TestRunClosesHostOnContextCancel(t *testing.T) {
 		done <- run(ctx, discardLogger(), func() (config.AppConfig, error) {
 			return config.AppConfig{
 				DeviceName:          "office-pc",
-				DataDir:             "C:/message-share",
+				DataDir:             "C:/shareme",
 				AgentTCPPort:        19090,
 				LocalHTTPPort:       52350,
 				DiscoveryUDPPort:    19091,
@@ -108,7 +108,7 @@ func TestRunReturnsAsyncErrorAndClosesHost(t *testing.T) {
 	err := run(context.Background(), discardLogger(), func() (config.AppConfig, error) {
 		return config.AppConfig{
 			DeviceName:          "office-pc",
-			DataDir:             "C:/message-share",
+			DataDir:             "C:/shareme",
 			AgentTCPPort:        19090,
 			LocalHTTPPort:       52350,
 			DiscoveryUDPPort:    19091,
@@ -148,7 +148,7 @@ func TestRunLogsLocalhostWebUIAddress(t *testing.T) {
 			func() (config.AppConfig, error) {
 				return config.AppConfig{
 					DeviceName:          "office-pc",
-					DataDir:             "C:/message-share",
+					DataDir:             "C:/shareme",
 					AgentTCPPort:        19090,
 					LocalHTTPPort:       52350,
 					DiscoveryUDPPort:    19091,
@@ -171,7 +171,7 @@ func TestRunLogsLocalhostWebUIAddress(t *testing.T) {
 }
 
 func TestHeadlessProcessSmoke(t *testing.T) {
-	if os.Getenv("MESSAGE_SHARE_HEADLESS_HELPER") == "1" {
+	if os.Getenv("SHAREME_HEADLESS_HELPER") == "1" {
 		main()
 		return
 	}
@@ -184,14 +184,14 @@ func TestHeadlessProcessSmoke(t *testing.T) {
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestHeadlessProcessSmoke")
 	cmd.Env = append(os.Environ(),
-		"MESSAGE_SHARE_HEADLESS_HELPER=1",
-		"MESSAGE_SHARE_DATA_DIR="+dataDir,
-		"MESSAGE_SHARE_AGENT_TCP_PORT="+strconv.Itoa(agentPort),
-		"MESSAGE_SHARE_LOCAL_HTTP_PORT="+strconv.Itoa(localHTTPPort),
-		"MESSAGE_SHARE_ACCELERATED_DATA_PORT="+strconv.Itoa(acceleratedPort),
-		"MESSAGE_SHARE_DISCOVERY_UDP_PORT="+strconv.Itoa(discoveryPort),
-		"MESSAGE_SHARE_DISCOVERY_LISTEN_ADDR=127.0.0.1:"+strconv.Itoa(discoveryPort),
-		"MESSAGE_SHARE_DISCOVERY_BROADCAST_ADDR=127.0.0.1:"+strconv.Itoa(discoveryPort),
+		"SHAREME_HEADLESS_HELPER=1",
+		"SHAREME_DATA_DIR="+dataDir,
+		"SHAREME_AGENT_TCP_PORT="+strconv.Itoa(agentPort),
+		"SHAREME_LOCAL_HTTP_PORT="+strconv.Itoa(localHTTPPort),
+		"SHAREME_ACCELERATED_DATA_PORT="+strconv.Itoa(acceleratedPort),
+		"SHAREME_DISCOVERY_UDP_PORT="+strconv.Itoa(discoveryPort),
+		"SHAREME_DISCOVERY_LISTEN_ADDR=127.0.0.1:"+strconv.Itoa(discoveryPort),
+		"SHAREME_DISCOVERY_BROADCAST_ADDR=127.0.0.1:"+strconv.Itoa(discoveryPort),
 	)
 
 	var output bytes.Buffer
@@ -219,7 +219,7 @@ func TestHeadlessProcessSmoke(t *testing.T) {
 
 	waitForPath(t, filepath.Join(dataDir, "config.json"), 8*time.Second, &output)
 	waitForPath(t, filepath.Join(dataDir, "local-device.json"), 8*time.Second, &output)
-	waitForPath(t, filepath.Join(dataDir, "message-share.db"), 8*time.Second, &output)
+	waitForPath(t, filepath.Join(dataDir, "shareme.db"), 8*time.Second, &output)
 	waitForHTTPReady(t, "http://127.0.0.1:"+strconv.Itoa(localHTTPPort)+"/api/bootstrap", 8*time.Second, &output)
 
 	assertProcessStillRunning(t, exitCh, &output)

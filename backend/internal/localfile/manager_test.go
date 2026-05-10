@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/localfile"
+	"shareme/backend/internal/localfile"
 )
 
 func TestManagerPickCreatesLeaseWithoutExposingPath(t *testing.T) {

@@ -1,10 +1,10 @@
 schema: spec-driven
 
 context: |
-  Project: Message Share, a LAN-focused desktop app for peer-to-peer text and file transfer.
+  Project: shareme, a LAN-focused desktop app for peer-to-peer text and file transfer.
   Runtime: Wails v2 desktop app with Go 1.25 backend, React 18 + TypeScript + Vite frontend, SQLite local storage.
-  Compatibility entrypoint: backend/cmd/message-share-agent serves a loopback-only localhost Web UI at 127.0.0.1.
-  Data root: ~/.message-share by default; MESSAGE_SHARE_DATA_DIR overrides it.
+  Compatibility entrypoint: backend/cmd/shareme-agent serves a loopback-only localhost Web UI at 127.0.0.1.
+  Data root: ~/.shareme by default; SHAREME_DATA_DIR overrides it.
   Main Windows verification: powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1.
   Frontend verification: run commands inside frontend/; npm test and npm run build are canonical local checks.
   Backend verification: run commands inside backend/; go test -count=1 -p 1 ./... is the canonical unit check.

@@ -168,8 +168,8 @@ func TestDefaultConfigSkipsDownloadDirResolutionWhenEnvironmentOverrideExists(t 
 		return filepath.Join(t.TempDir(), "system-downloads"), nil
 	}
 
-	t.Setenv("MESSAGE_SHARE_DATA_DIR", filepath.Join(t.TempDir(), "data"))
-	t.Setenv("MESSAGE_SHARE_DOWNLOAD_DIR", overrideDir)
+	t.Setenv("SHAREME_DATA_DIR", filepath.Join(t.TempDir(), "data"))
+	t.Setenv("SHAREME_DOWNLOAD_DIR", overrideDir)
 
 	cfg := Default()
 	if cfg.DefaultDownloadDir != overrideDir {
@@ -203,8 +203,8 @@ func TestDefaultConfigFallsBackToSystemDownloadsWhenExplicitDownloadDirInvalid(t
 		t.Fatalf("expected blocked explicit download dir file to be created: %v", err)
 	}
 
-	t.Setenv("MESSAGE_SHARE_DATA_DIR", filepath.Join(t.TempDir(), "data"))
-	t.Setenv("MESSAGE_SHARE_DOWNLOAD_DIR", blockedOverride)
+	t.Setenv("SHAREME_DATA_DIR", filepath.Join(t.TempDir(), "data"))
+	t.Setenv("SHAREME_DOWNLOAD_DIR", blockedOverride)
 
 	cfg := Default()
 	if cfg.DefaultDownloadDir != systemDir {
@@ -228,8 +228,8 @@ func TestDefaultConfigValidatesExplicitDownloadDirWithoutProbingLowerPriorityDir
 	}
 
 	explicitDir := filepath.Join(t.TempDir(), "explicit-download-dir")
-	t.Setenv("MESSAGE_SHARE_DATA_DIR", filepath.Join(t.TempDir(), "data"))
-	t.Setenv("MESSAGE_SHARE_DOWNLOAD_DIR", explicitDir)
+	t.Setenv("SHAREME_DATA_DIR", filepath.Join(t.TempDir(), "data"))
+	t.Setenv("SHAREME_DOWNLOAD_DIR", explicitDir)
 
 	cfg := Default()
 	if cfg.DefaultDownloadDir != explicitDir {
@@ -258,8 +258,8 @@ func TestDefaultConfigFallsBackToDataDirDownloadsWhenExplicitAndSystemDownloadsI
 	}
 
 	dataDir := filepath.Join(t.TempDir(), "data")
-	t.Setenv("MESSAGE_SHARE_DATA_DIR", dataDir)
-	t.Setenv("MESSAGE_SHARE_DOWNLOAD_DIR", blockedOverride)
+	t.Setenv("SHAREME_DATA_DIR", dataDir)
+	t.Setenv("SHAREME_DOWNLOAD_DIR", blockedOverride)
 
 	cfg := Default()
 	expected := filepath.Join(dataDir, "downloads")
@@ -300,10 +300,10 @@ func TestDefaultConfigFallsBackToResolvedDataDirWhenConfiguredDataDirInvalid(t *
 	t.Setenv("XDG_CONFIG_HOME", blockedConfigBase)
 	t.Setenv("USERPROFILE", fallbackHome)
 	t.Setenv("HOME", fallbackHome)
-	t.Setenv("MESSAGE_SHARE_DATA_DIR", blockedDataDir)
+	t.Setenv("SHAREME_DATA_DIR", blockedDataDir)
 
 	cfg := Default()
-	expectedDataDir := filepath.Join(fallbackHome, ".message-share")
+	expectedDataDir := filepath.Join(fallbackHome, ".shareme")
 	expectedDownloadDir := filepath.Join(expectedDataDir, "downloads")
 	if cfg.DataDir != expectedDataDir {
 		t.Fatalf("expected invalid configured data dir to fall back to %s, got %s", expectedDataDir, cfg.DataDir)
@@ -339,15 +339,15 @@ func TestDefaultConfigUsesFixedPorts(t *testing.T) {
 }
 
 func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
-	t.Setenv("MESSAGE_SHARE_AGENT_TCP_PORT", "52351")
-	t.Setenv("MESSAGE_SHARE_LOCAL_HTTP_PORT", "52354")
-	t.Setenv("MESSAGE_SHARE_ACCELERATED_DATA_PORT", "52353")
-	t.Setenv("MESSAGE_SHARE_ACCELERATED_ENABLED", "false")
-	t.Setenv("MESSAGE_SHARE_DISCOVERY_UDP_PORT", "52352")
-	t.Setenv("MESSAGE_SHARE_DISCOVERY_LISTEN_ADDR", "127.0.0.1:52352")
-	t.Setenv("MESSAGE_SHARE_DISCOVERY_BROADCAST_ADDR", "127.0.0.1:52362")
-	t.Setenv("MESSAGE_SHARE_DATA_DIR", t.TempDir())
-	t.Setenv("MESSAGE_SHARE_DEVICE_NAME", "客厅电脑")
+	t.Setenv("SHAREME_AGENT_TCP_PORT", "52351")
+	t.Setenv("SHAREME_LOCAL_HTTP_PORT", "52354")
+	t.Setenv("SHAREME_ACCELERATED_DATA_PORT", "52353")
+	t.Setenv("SHAREME_ACCELERATED_ENABLED", "false")
+	t.Setenv("SHAREME_DISCOVERY_UDP_PORT", "52352")
+	t.Setenv("SHAREME_DISCOVERY_LISTEN_ADDR", "127.0.0.1:52352")
+	t.Setenv("SHAREME_DISCOVERY_BROADCAST_ADDR", "127.0.0.1:52362")
+	t.Setenv("SHAREME_DATA_DIR", t.TempDir())
+	t.Setenv("SHAREME_DEVICE_NAME", "客厅电脑")
 
 	cfg := Default()
 	if cfg.AgentTCPPort != 52351 {
@@ -382,7 +382,7 @@ func TestDefaultConfigAllowsEnvironmentOverrides(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigUsesMessageShareRootLayout(t *testing.T) {
+func TestDefaultConfigUsesSharemeRootLayout(t *testing.T) {
 	originalResolver := systemDownloadDirResolver
 	t.Cleanup(func() {
 		systemDownloadDirResolver = originalResolver
@@ -401,15 +401,15 @@ func TestDefaultConfigUsesMessageShareRootLayout(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 
 	cfg := Default()
-	expectedDataDir := filepath.Join(homeDir, ".message-share")
+	expectedDataDir := filepath.Join(homeDir, ".shareme")
 	if cfg.DataDir != expectedDataDir {
 		t.Fatalf("expected default data dir %s, got %s", expectedDataDir, cfg.DataDir)
 	}
 	if cfg.IdentityFilePath != filepath.Join(expectedDataDir, "local-device.json") {
 		t.Fatalf("expected identity path %s, got %s", filepath.Join(expectedDataDir, "local-device.json"), cfg.IdentityFilePath)
 	}
-	if cfg.DatabasePath != filepath.Join(expectedDataDir, "message-share.db") {
-		t.Fatalf("expected database path %s, got %s", filepath.Join(expectedDataDir, "message-share.db"), cfg.DatabasePath)
+	if cfg.DatabasePath != filepath.Join(expectedDataDir, "shareme.db") {
+		t.Fatalf("expected database path %s, got %s", filepath.Join(expectedDataDir, "shareme.db"), cfg.DatabasePath)
 	}
 	if cfg.LogDir != filepath.Join(expectedDataDir, "logs") {
 		t.Fatalf("expected log dir %s, got %s", filepath.Join(expectedDataDir, "logs"), cfg.LogDir)
@@ -427,7 +427,7 @@ func TestDefaultConfigUsesMessageShareRootLayout(t *testing.T) {
 
 func TestLoadDefaultReturnsErrorWhenConfigFileInvalid(t *testing.T) {
 	homeDir := filepath.Join(t.TempDir(), "home")
-	rootDir := filepath.Join(homeDir, ".message-share")
+	rootDir := filepath.Join(homeDir, ".shareme")
 	if err := os.MkdirAll(rootDir, 0o755); err != nil {
 		t.Fatalf("expected root dir to be created: %v", err)
 	}
@@ -484,7 +484,7 @@ func TestLoadDefaultMigratesLegacyDataBeforeReadingNewRoot(t *testing.T) {
 		t.Fatalf("load default config: %v", err)
 	}
 
-	newRoot := filepath.Join(homeDir, ".message-share")
+	newRoot := filepath.Join(homeDir, ".shareme")
 	if cfg.DataDir != newRoot {
 		t.Fatalf("expected migrated data dir %s, got %s", newRoot, cfg.DataDir)
 	}
@@ -493,6 +493,6 @@ func TestLoadDefaultMigratesLegacyDataBeforeReadingNewRoot(t *testing.T) {
 	}
 	assertFileContent(t, filepath.Join(newRoot, "config.json"), legacy.configContent)
 	assertFileContent(t, filepath.Join(newRoot, "local-device.json"), legacy.identityContent)
-	assertFileContent(t, filepath.Join(newRoot, "message-share.db"), legacy.databaseContent)
+	assertFileContent(t, filepath.Join(newRoot, "shareme.db"), legacy.databaseContent)
 	assertFileContent(t, filepath.Join(newRoot, migrationMarkerFileName), []byte(legacyRoot))
 }

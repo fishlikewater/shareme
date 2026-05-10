@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"message-share/backend/internal/api"
-	appruntime "message-share/backend/internal/app"
-	"message-share/backend/internal/config"
-	"message-share/backend/internal/desktop"
-	runtimehost "message-share/backend/internal/runtime"
+	"shareme/backend/internal/api"
+	appruntime "shareme/backend/internal/app"
+	"shareme/backend/internal/config"
+	"shareme/backend/internal/desktop"
+	runtimehost "shareme/backend/internal/runtime"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -246,7 +246,7 @@ type uiReadyMarkerPayload struct {
 }
 
 func writeUIReadyMarker(payload uiReadyMarkerPayload) error {
-	markerPath := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_UI_READY_MARKER"))
+	markerPath := strings.TrimSpace(os.Getenv("SHAREME_UI_READY_MARKER"))
 	if markerPath == "" {
 		return nil
 	}

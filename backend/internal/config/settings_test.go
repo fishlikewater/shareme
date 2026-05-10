@@ -8,7 +8,7 @@ import (
 )
 
 func TestLoadSettingsCreatesDefaultConfig(t *testing.T) {
-	rootDir := filepath.Join(t.TempDir(), ".message-share")
+	rootDir := filepath.Join(t.TempDir(), ".shareme")
 
 	settings, err := LoadSettings(rootDir)
 	if err != nil {
@@ -42,7 +42,7 @@ func TestLoadSettingsCreatesDefaultConfig(t *testing.T) {
 }
 
 func TestLoadSettingsPreservesUserValuesWhileBackfillingDefaults(t *testing.T) {
-	rootDir := filepath.Join(t.TempDir(), ".message-share")
+	rootDir := filepath.Join(t.TempDir(), ".shareme")
 	configPath := filepath.Join(rootDir, "config.json")
 	if err := os.MkdirAll(rootDir, 0o755); err != nil {
 		t.Fatalf("创建根目录失败: %v", err)
@@ -73,7 +73,7 @@ func TestLoadSettingsPreservesUserValuesWhileBackfillingDefaults(t *testing.T) {
 }
 
 func TestSaveSettingsPreservesExistingFieldsAndUnknownKeys(t *testing.T) {
-	rootDir := filepath.Join(t.TempDir(), ".message-share")
+	rootDir := filepath.Join(t.TempDir(), ".shareme")
 	configPath := filepath.Join(rootDir, "config.json")
 	if err := os.MkdirAll(rootDir, 0o755); err != nil {
 		t.Fatalf("创建根目录失败: %v", err)

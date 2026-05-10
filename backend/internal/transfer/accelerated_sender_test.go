@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/protocol"
+	"shareme/backend/internal/protocol"
 )
 
 func TestAcceleratedStripingControllerMovesAcrossDiscreteLevels(t *testing.T) {

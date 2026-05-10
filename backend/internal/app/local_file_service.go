@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"message-share/backend/internal/localfile"
+	"shareme/backend/internal/localfile"
 )
 
 type LocalFileSnapshot struct {

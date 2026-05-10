@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Goal:** 将 Message Share 前端从展示型卡片首页改成现代清爽的工作台 UI，优先优化设备切换与设备状态判断。
+**Goal:** 将 shareme 前端从展示型卡片首页改成现代清爽的工作台 UI，优先优化设备切换与设备状态判断。
 
 **Architecture:** 保持现有 React + TypeScript 前端和 `LocalApi` 契约不变，只重排 `AppShell` 的布局组合，并让 `DeviceList` 支持可折叠 Dock。新增一个轻量 `WorkbenchStatusPanel` 作为健康状态与传输状态的视觉容器，不合并底层业务组件。
 
@@ -69,7 +69,7 @@
 In the first `App` render test, change the expectations away from the hero copy and toward the workbench shell:
 
 ```tsx
-expect(await screen.findByRole("banner", { name: "Message Share 工作台" })).toBeInTheDocument();
+expect(await screen.findByRole("banner", { name: "shareme 工作台" })).toBeInTheDocument();
 expect(screen.getByText("本机设备")).toBeInTheDocument();
 expect(screen.getByText("我的电脑")).toBeInTheDocument();
 expect(screen.getByRole("navigation", { name: "设备 Dock" })).toBeInTheDocument();
@@ -221,11 +221,11 @@ const [deviceDockCollapsed, setDeviceDockCollapsed] = useState(false);
 Replace the loaded-state JSX from `<section className="ms-hero">` through `<section className="ms-layout">` with this structure:
 
 ```tsx
-<header className="ms-appbar" role="banner" aria-label="Message Share 工作台">
+<header className="ms-appbar" role="banner" aria-label="shareme 工作台">
   <div className="ms-appbar__identity">
     <span className="ms-appbar__mark" aria-hidden="true">MS</span>
     <div>
-      <span className="ms-eyebrow">Message Share</span>
+      <span className="ms-eyebrow">shareme</span>
       <strong className="ms-appbar__title">传输工作台</strong>
     </div>
   </div>

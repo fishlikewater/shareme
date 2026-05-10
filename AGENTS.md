@@ -4,13 +4,13 @@
 
 ## 0. 项目定制位
 
-- 项目名称：`Message Share`
+- 项目名称：`shareme`
 - 项目形态：局域网点对点消息与文件传输桌面应用
 - 正式入口：`Wails + Go + React` 桌面应用
-- 兼容入口：`backend/cmd/message-share-agent` 提供仅限本机 loopback 访问的 localhost Web UI
+- 兼容入口：`backend/cmd/shareme-agent` 提供仅限本机 loopback 访问的 localhost Web UI
 - 后端技术栈：Go 1.25、Wails v2.12、SQLite、局域网发现、点对点 HTTP/加速传输
 - 前端技术栈：React 18、TypeScript、Vite、Vitest、Testing Library
-- 运行数据目录：默认 `~/.message-share`，可由 `MESSAGE_SHARE_DATA_DIR` 覆盖
+- 运行数据目录：默认 `~/.shareme`，可由 `SHAREME_DATA_DIR` 覆盖
 - 主要开发命令：Windows 执行 `powershell -ExecutionPolicy Bypass -File .\scripts\dev-desktop.ps1`
 - 主要测试命令：Windows 执行 `powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1`
 - 后端聚焦测试：在 `backend/` 执行 `go test -count=1 -p 1 ./...`

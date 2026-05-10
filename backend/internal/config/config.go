@@ -31,7 +31,7 @@ func LoadDefault() (AppConfig, error) {
 		return AppConfig{}, err
 	}
 	dataDir := defaultLayout.RootDir
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DATA_DIR")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("SHAREME_DATA_DIR")); value != "" {
 		if err := ensureDownloadDirUsable(value); err == nil {
 			dataDir = value
 		}
@@ -66,37 +66,37 @@ func LoadDefault() (AppConfig, error) {
 		MaxAutoAcceptFileMB: settings.MaxAutoAcceptFileMB,
 	}
 
-	if value, ok := lookupEnvInt("MESSAGE_SHARE_AGENT_TCP_PORT"); ok {
+	if value, ok := lookupEnvInt("SHAREME_AGENT_TCP_PORT"); ok {
 		cfg.AgentTCPPort = value
 	}
-	if value, ok := lookupEnvInt("MESSAGE_SHARE_LOCAL_HTTP_PORT"); ok {
+	if value, ok := lookupEnvInt("SHAREME_LOCAL_HTTP_PORT"); ok {
 		cfg.LocalHTTPPort = value
 	}
-	if value, ok := lookupEnvInt("MESSAGE_SHARE_ACCELERATED_DATA_PORT"); ok {
+	if value, ok := lookupEnvInt("SHAREME_ACCELERATED_DATA_PORT"); ok {
 		cfg.AcceleratedDataPort = value
 	}
-	if value, ok := lookupEnvBool("MESSAGE_SHARE_ACCELERATED_ENABLED"); ok {
+	if value, ok := lookupEnvBool("SHAREME_ACCELERATED_ENABLED"); ok {
 		cfg.AcceleratedEnabled = value
 	}
-	if value, ok := lookupEnvInt("MESSAGE_SHARE_DISCOVERY_UDP_PORT"); ok {
+	if value, ok := lookupEnvInt("SHAREME_DISCOVERY_UDP_PORT"); ok {
 		cfg.DiscoveryUDPPort = value
 	}
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DEVICE_NAME")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("SHAREME_DEVICE_NAME")); value != "" {
 		cfg.DeviceName = value
 	}
 
 	cfg.DiscoveryListenAddr = ":" + strconv.Itoa(cfg.DiscoveryUDPPort)
 	cfg.DiscoveryBroadcastAddr = "255.255.255.255:" + strconv.Itoa(cfg.DiscoveryUDPPort)
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DISCOVERY_LISTEN_ADDR")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("SHAREME_DISCOVERY_LISTEN_ADDR")); value != "" {
 		cfg.DiscoveryListenAddr = value
 	}
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DISCOVERY_BROADCAST_ADDR")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("SHAREME_DISCOVERY_BROADCAST_ADDR")); value != "" {
 		cfg.DiscoveryBroadcastAddr = value
 	}
 
 	cfg.DefaultDownloadDir = resolveConfiguredDownloadDir(settings.DownloadDir, cfg.DataDir)
 
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_IDENTITY_FILE")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("SHAREME_IDENTITY_FILE")); value != "" {
 		cfg.IdentityFilePath = value
 	}
 

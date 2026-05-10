@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/domain"
+	"shareme/backend/internal/domain"
 )
 
 func TestOpenCreatesCoreTables(t *testing.T) {
@@ -34,7 +34,7 @@ func TestOpenCreatesCoreTables(t *testing.T) {
 }
 
 func TestOpenReusesDiskDatabaseSchema(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "message-share.db")
+	dbPath := filepath.Join(t.TempDir(), "shareme.db")
 
 	db, err := Open(dbPath)
 	if err != nil {
@@ -58,7 +58,7 @@ func TestOpenReusesDiskDatabaseSchema(t *testing.T) {
 }
 
 func TestOpenCreatesMissingParentDirectory(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "level1", "level2", "message-share.db")
+	dbPath := filepath.Join(t.TempDir(), "level1", "level2", "shareme.db")
 
 	db, err := Open(dbPath)
 	if err != nil {

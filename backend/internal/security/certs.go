@@ -13,7 +13,7 @@ import (
 	"math/big"
 	"time"
 
-	"message-share/backend/internal/domain"
+	"shareme/backend/internal/domain"
 )
 
 type PinnedPeer struct {

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"message-share/backend/internal/app"
-	"message-share/backend/internal/localfile"
+	"shareme/backend/internal/app"
+	"shareme/backend/internal/localfile"
 )
 
 type fakeRuntimeCommands struct {

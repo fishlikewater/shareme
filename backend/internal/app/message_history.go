@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"message-share/backend/internal/domain"
+	"shareme/backend/internal/domain"
 )
 
 const messageHistoryPageSize = 10

@@ -257,9 +257,9 @@ describe("App", () => {
 
     render(<App api={api} />);
 
-    expect(screen.getByText("正在连接本机 Message Share 服务")).toBeInTheDocument();
+    expect(screen.getByText("正在连接本机 shareme 服务")).toBeInTheDocument();
     expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("banner", { name: "Message Share 工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("banner", { name: "shareme 工作台" })).toBeInTheDocument();
     expect(screen.getByText("本机设备")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "设备 Dock" })).toBeInTheDocument();
     expect(screen.getByRole("main", { name: "会话工作区" })).toBeInTheDocument();
@@ -688,12 +688,16 @@ describe("App", () => {
     render(<App api={api} />);
 
     expect(await screen.findByRole("navigation", { name: "设备 Dock" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /办公室副机/ })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /办公室副机/ })).toHaveAttribute("aria-pressed", "true");
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "收起设备 Dock" }));
 
     expect(screen.getByRole("navigation", { name: "设备 Dock" })).toHaveClass("is-collapsed");
-    expect(screen.getByRole("button", { name: /办公室副机/ })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /办公室副机/ })).toHaveAttribute("aria-pressed", "true");
+    });
     expect(screen.getByRole("button", { name: "展开设备 Dock" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "展开设备 Dock" }));

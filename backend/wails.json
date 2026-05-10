@@ -1,8 +1,8 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "message-share",
+  "name": "shareme",
   "assetdir": "./frontend/dist",
-  "outputfilename": "message-share",
+  "outputfilename": "shareme",
   "frontend:dir": "../frontend",
   "frontend:install": "npm ci",
   "frontend:build": "npm run build",

@@ -9,7 +9,7 @@ TBD - created by archiving change upgrade-to-wails-cross-platform-runtime. Updat
 
 #### Scenario: 启动桌面应用后直接进入主界面
 - **WHEN** 用户启动正式桌面应用
-- **THEN** 系统必须打开桌面主窗口并在窗口内加载 Message Share 主界面
+- **THEN** 系统必须打开桌面主窗口并在窗口内加载 shareme 主界面
 
 #### Scenario: 正式入口不再依赖手动访问本地地址
 - **WHEN** 正式桌面构建完成启动
@@ -44,8 +44,8 @@ TBD - created by archiving change upgrade-to-wails-cross-platform-runtime. Updat
 系统若提供无窗口的 headless 兼容入口，该入口 MUST 复用与桌面正式入口相同的局域网运行时核心、配置目录布局与资源释放语义；该入口 MUST NOT 重新引入要求用户手动访问 `localhost` 的浏览器 UI 主入口，也 MUST NOT 冒充一个可独立完成首次配对与主动发送的本地交互入口。
 
 #### Scenario: 以 headless 方式启动兼容入口
-- **WHEN** 用户启动 `backend/cmd/message-share-agent` 构建出的 headless 兼容入口
-- **THEN** 系统必须在不打开桌面窗口的前提下拉起局域网运行时，并使用与桌面正式入口一致的 `.message-share` 目录布局
+- **WHEN** 用户启动 `backend/cmd/shareme-agent` 构建出的 headless 兼容入口
+- **THEN** 系统必须在不打开桌面窗口的前提下拉起局域网运行时，并使用与桌面正式入口一致的 `.shareme` 目录布局
 
 #### Scenario: headless 兼容入口退出时释放同一套资源
 - **WHEN** headless 兼容入口收到退出信号

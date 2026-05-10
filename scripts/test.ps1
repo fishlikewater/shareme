@@ -36,11 +36,11 @@ function Ensure-BackendFrontendFallback {
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <title>Message Share</title>
+    <title>shareme</title>
   </head>
   <body>
     <!-- 构建兜底页：当前端 dist 尚未生成时，保证桌面宿主仍可完成编译并给出明确提示。 -->
-    <div id="root">Message Share desktop assets are not built yet.</div>
+    <div id="root">shareme desktop assets are not built yet.</div>
   </body>
 </html>
 "@ | Set-Content -LiteralPath $fallbackIndexPath -Encoding UTF8
@@ -58,7 +58,7 @@ function Invoke-CrossBuildSanityCheck {
     $env:GOARCH = $TargetGoArch
 
     $configTestPath = Join-Path $crossBuildDir ("config-{0}-{1}.test" -f $TargetGoOS, $TargetGoArch)
-    $desktopBinaryPath = Join-Path $crossBuildDir ("message-share-{0}-{1}" -f $TargetGoOS, $TargetGoArch)
+    $desktopBinaryPath = Join-Path $crossBuildDir ("shareme-{0}-{1}" -f $TargetGoOS, $TargetGoArch)
 
     go test -c -o $configTestPath ./internal/config
     if ($LASTEXITCODE -ne 0) {

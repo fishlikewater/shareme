@@ -9,7 +9,7 @@ import type {
   TransferSnapshot,
 } from "./types";
 
-const DESKTOP_EVENT_NAME = "message-share:event";
+const DESKTOP_EVENT_NAME = "shareme:event";
 
 export type DesktopCommands = {
   Bootstrap: () => Promise<BootstrapSnapshot>;

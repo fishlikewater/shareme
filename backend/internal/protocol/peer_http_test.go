@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/device"
-	"message-share/backend/internal/discovery"
-	"message-share/backend/internal/security"
+	"shareme/backend/internal/device"
+	"shareme/backend/internal/discovery"
+	"shareme/backend/internal/security"
 )
 
 func TestHTTPPeerTransportStartPairingPostsJSON(t *testing.T) {

@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/config"
-	"message-share/backend/internal/discovery"
-	"message-share/backend/internal/domain"
-	"message-share/backend/internal/localfile"
-	"message-share/backend/internal/protocol"
-	"message-share/backend/internal/session"
-	"message-share/backend/internal/transfer"
+	"shareme/backend/internal/config"
+	"shareme/backend/internal/discovery"
+	"shareme/backend/internal/domain"
+	"shareme/backend/internal/localfile"
+	"shareme/backend/internal/protocol"
+	"shareme/backend/internal/session"
+	"shareme/backend/internal/transfer"
 )
 
 func TestPrepareAcceleratedTransferRegistersIncomingSession(t *testing.T) {

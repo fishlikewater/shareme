@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"message-share/backend/internal/app"
-	"message-share/backend/internal/localfile"
+	"shareme/backend/internal/app"
+	"shareme/backend/internal/localfile"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )

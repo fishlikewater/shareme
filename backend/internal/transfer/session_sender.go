@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"message-share/backend/internal/discovery"
-	"message-share/backend/internal/protocol"
+	"shareme/backend/internal/discovery"
+	"shareme/backend/internal/protocol"
 )
 
 type SessionTransport interface {

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/api"
-	appruntime "message-share/backend/internal/app"
-	"message-share/backend/internal/config"
-	"message-share/backend/internal/desktop"
+	"shareme/backend/internal/api"
+	appruntime "shareme/backend/internal/app"
+	"shareme/backend/internal/config"
+	"shareme/backend/internal/desktop"
 )
 
 type fakeDesktopHost struct {
@@ -70,7 +70,7 @@ func TestDesktopAppStartupQuitsWhenRuntimeHostReportsAsyncError(t *testing.T) {
 
 func TestNewDesktopAppReturnsConfigError(t *testing.T) {
 	homeDir := filepath.Join(t.TempDir(), "home")
-	rootDir := filepath.Join(homeDir, ".message-share")
+	rootDir := filepath.Join(homeDir, ".shareme")
 	if err := os.MkdirAll(rootDir, 0o755); err != nil {
 		t.Fatalf("expected root dir to be created: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestDesktopAppReplayEventsReturnsBacklogAfterSeq(t *testing.T) {
 
 func TestDesktopAppUiReadyWritesMarkerWhenConfigured(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "ui-ready", "marker.txt")
-	t.Setenv("MESSAGE_SHARE_UI_READY_MARKER", markerPath)
+	t.Setenv("SHAREME_UI_READY_MARKER", markerPath)
 
 	app := &DesktopApp{
 		cfg: config.AppConfig{

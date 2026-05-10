@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"message-share/backend/internal/device"
+	"shareme/backend/internal/device"
 )
 
 func TestBuildPinnedPeerUsesStableFingerprint(t *testing.T) {

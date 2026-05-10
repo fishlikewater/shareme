@@ -364,7 +364,7 @@ export default function AppShell({ api }: AppProps) {
           <section className="ms-splash">
             <span className="ms-eyebrow">LAN P2P Share</span>
             <h1 className="ms-splash__title">一页直传</h1>
-            <p className="ms-splash__body">正在连接本机 Message Share 服务</p>
+            <p className="ms-splash__body">正在连接本机 shareme 服务</p>
           </section>
         </div>
       </main>
@@ -391,11 +391,11 @@ export default function AppShell({ api }: AppProps) {
   return (
     <div className="ms-app">
       <div className="ms-shell">
-        <header className="ms-appbar" role="banner" aria-label="Message Share 工作台">
+        <header className="ms-appbar" role="banner" aria-label="shareme 工作台">
           <div className="ms-appbar__identity">
             <span className="ms-appbar__mark" aria-hidden="true">MS</span>
             <div>
-              <span className="ms-eyebrow">Message Share</span>
+              <span className="ms-eyebrow">shareme</span>
               <strong className="ms-appbar__title">传输工作台</strong>
               <span className="ms-appbar__copy">文字与文件都会直连传输，不经过云端。</span>
             </div>

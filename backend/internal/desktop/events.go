@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
-	"message-share/backend/internal/api"
+	"shareme/backend/internal/api"
 )
 
-const EventName = "message-share:event"
+const EventName = "shareme:event"
 
 type EventEmitter interface {
 	Emit(ctx context.Context, eventName string, payload ...any)

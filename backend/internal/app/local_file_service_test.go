@@ -5,17 +5,17 @@ import (
 	"errors"
 	"testing"
 
-	"message-share/backend/internal/localfile"
+	"shareme/backend/internal/localfile"
 )
 
 type fakeLocalFileResolver struct {
-	pickLease       localfile.Lease
-	pickErr         error
-	registerLease   localfile.Lease
-	registerErr     error
-	registerPath    string
-	resolveLease    localfile.Lease
-	resolveErr      error
+	pickLease     localfile.Lease
+	pickErr       error
+	registerLease localfile.Lease
+	registerErr   error
+	registerPath  string
+	resolveLease  localfile.Lease
+	resolveErr    error
 }
 
 func (f fakeLocalFileResolver) Pick(context.Context) (localfile.Lease, error) {

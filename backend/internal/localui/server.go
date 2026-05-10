@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"message-share/backend/internal/api"
-	"message-share/backend/internal/config"
-	appruntime "message-share/backend/internal/app"
+	"shareme/backend/internal/api"
+	appruntime "shareme/backend/internal/app"
+	"shareme/backend/internal/config"
 )
 
 type ServiceDeps struct {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"message-share/backend/internal/domain"
 	_ "modernc.org/sqlite"
+	"shareme/backend/internal/domain"
 )
 
 type DB struct {

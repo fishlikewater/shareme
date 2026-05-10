@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"message-share/backend/internal/api"
+	"shareme/backend/internal/api"
 )
 
 func TestEventForwarderPublishesToBusAndDesktopEmitter(t *testing.T) {

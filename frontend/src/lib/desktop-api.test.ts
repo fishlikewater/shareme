@@ -79,7 +79,7 @@ describe("createDesktopApiClient", () => {
       },
     });
 
-    expect(eventsOn).toHaveBeenCalledWith("message-share:event", expect.any(Function));
+    expect(eventsOn).toHaveBeenCalledWith("shareme:event", expect.any(Function));
     expect(commands.ReplayEvents).toHaveBeenCalledWith(3);
     await waitFor(() => {
       expect(received.map((event) => event.eventSeq)).toEqual([4, 5]);
@@ -91,7 +91,7 @@ describe("createDesktopApiClient", () => {
 
     subscription.close();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
-    expect(eventsOff).toHaveBeenCalledWith("message-share:event");
+    expect(eventsOff).toHaveBeenCalledWith("shareme:event");
   });
 });
 

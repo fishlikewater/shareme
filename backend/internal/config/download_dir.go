@@ -51,7 +51,7 @@ func resolveGuaranteedDownloadDir(dataDir string) string {
 		}
 	}
 
-	tempDir, err := downloadDirMkdirTemp("", "message-share-downloads-*")
+	tempDir, err := downloadDirMkdirTemp("", "shareme-downloads-*")
 	if err == nil {
 		if ensureErr := ensureDownloadDirUsable(tempDir); ensureErr == nil {
 			return tempDir
@@ -63,7 +63,7 @@ func resolveGuaranteedDownloadDir(dataDir string) string {
 }
 
 func resolveConfiguredDownloadDir(configured string, dataDir string) string {
-	if value := strings.TrimSpace(os.Getenv("MESSAGE_SHARE_DOWNLOAD_DIR")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("SHAREME_DOWNLOAD_DIR")); value != "" {
 		configured = value
 	}
 
@@ -101,7 +101,7 @@ func ensureDownloadDirUsable(dir string) error {
 		return err
 	}
 
-	tempFile, err := downloadDirCreateTemp(dir, ".message-share-write-check-*.tmp")
+	tempFile, err := downloadDirCreateTemp(dir, ".shareme-write-check-*.tmp")
 	if err != nil {
 		return err
 	}

@@ -18,7 +18,7 @@ if (-not $scriptPath) {
 
 $scriptDir = Split-Path -Parent $scriptPath
 $repoRoot = Split-Path -Parent $scriptDir
-$binaryPath = Join-Path $repoRoot "dist\\message-share-agent.exe"
+$binaryPath = Join-Path $repoRoot "dist\\shareme-agent.exe"
 
 if (-not $SkipBuild) {
     & (Join-Path $scriptDir "build-agent.ps1")
@@ -44,25 +44,25 @@ New-Item -ItemType Directory -Force -Path $homeDir | Out-Null
 
 $previousUserProfile = $env:USERPROFILE
 $previousHome = $env:HOME
-$previousDataDir = $env:MESSAGE_SHARE_DATA_DIR
-$previousAgentTcpPort = $env:MESSAGE_SHARE_AGENT_TCP_PORT
-$previousLocalHttpPort = $env:MESSAGE_SHARE_LOCAL_HTTP_PORT
-$previousAcceleratedDataPort = $env:MESSAGE_SHARE_ACCELERATED_DATA_PORT
-$previousDiscoveryUdpPort = $env:MESSAGE_SHARE_DISCOVERY_UDP_PORT
-$previousDiscoveryListenAddr = $env:MESSAGE_SHARE_DISCOVERY_LISTEN_ADDR
-$previousDiscoveryBroadcastAddr = $env:MESSAGE_SHARE_DISCOVERY_BROADCAST_ADDR
+$previousDataDir = $env:SHAREME_DATA_DIR
+$previousAgentTcpPort = $env:SHAREME_AGENT_TCP_PORT
+$previousLocalHttpPort = $env:SHAREME_LOCAL_HTTP_PORT
+$previousAcceleratedDataPort = $env:SHAREME_ACCELERATED_DATA_PORT
+$previousDiscoveryUdpPort = $env:SHAREME_DISCOVERY_UDP_PORT
+$previousDiscoveryListenAddr = $env:SHAREME_DISCOVERY_LISTEN_ADDR
+$previousDiscoveryBroadcastAddr = $env:SHAREME_DISCOVERY_BROADCAST_ADDR
 $process = $null
 
 try {
     $env:USERPROFILE = $homeDir
     $env:HOME = $homeDir
-    $env:MESSAGE_SHARE_DATA_DIR = $runtimeDir
-    $env:MESSAGE_SHARE_AGENT_TCP_PORT = $agentTcpPort
-    $env:MESSAGE_SHARE_LOCAL_HTTP_PORT = $localHttpPort
-    $env:MESSAGE_SHARE_ACCELERATED_DATA_PORT = $acceleratedDataPort
-    $env:MESSAGE_SHARE_DISCOVERY_UDP_PORT = $discoveryUdpPort
-    $env:MESSAGE_SHARE_DISCOVERY_LISTEN_ADDR = "127.0.0.1:$discoveryUdpPort"
-    $env:MESSAGE_SHARE_DISCOVERY_BROADCAST_ADDR = "127.0.0.1:$discoveryUdpPort"
+    $env:SHAREME_DATA_DIR = $runtimeDir
+    $env:SHAREME_AGENT_TCP_PORT = $agentTcpPort
+    $env:SHAREME_LOCAL_HTTP_PORT = $localHttpPort
+    $env:SHAREME_ACCELERATED_DATA_PORT = $acceleratedDataPort
+    $env:SHAREME_DISCOVERY_UDP_PORT = $discoveryUdpPort
+    $env:SHAREME_DISCOVERY_LISTEN_ADDR = "127.0.0.1:$discoveryUdpPort"
+    $env:SHAREME_DISCOVERY_BROADCAST_ADDR = "127.0.0.1:$discoveryUdpPort"
 
     $process = Start-Process -FilePath $binaryPath -WorkingDirectory $runDir -PassThru -WindowStyle Hidden
     $configPath = Join-Path $runtimeDir "config.json"
@@ -149,11 +149,11 @@ finally {
     }
     $env:USERPROFILE = $previousUserProfile
     $env:HOME = $previousHome
-    $env:MESSAGE_SHARE_DATA_DIR = $previousDataDir
-    $env:MESSAGE_SHARE_AGENT_TCP_PORT = $previousAgentTcpPort
-    $env:MESSAGE_SHARE_LOCAL_HTTP_PORT = $previousLocalHttpPort
-    $env:MESSAGE_SHARE_ACCELERATED_DATA_PORT = $previousAcceleratedDataPort
-    $env:MESSAGE_SHARE_DISCOVERY_UDP_PORT = $previousDiscoveryUdpPort
-    $env:MESSAGE_SHARE_DISCOVERY_LISTEN_ADDR = $previousDiscoveryListenAddr
-    $env:MESSAGE_SHARE_DISCOVERY_BROADCAST_ADDR = $previousDiscoveryBroadcastAddr
+    $env:SHAREME_DATA_DIR = $previousDataDir
+    $env:SHAREME_AGENT_TCP_PORT = $previousAgentTcpPort
+    $env:SHAREME_LOCAL_HTTP_PORT = $previousLocalHttpPort
+    $env:SHAREME_ACCELERATED_DATA_PORT = $previousAcceleratedDataPort
+    $env:SHAREME_DISCOVERY_UDP_PORT = $previousDiscoveryUdpPort
+    $env:SHAREME_DISCOVERY_LISTEN_ADDR = $previousDiscoveryListenAddr
+    $env:SHAREME_DISCOVERY_BROADCAST_ADDR = $previousDiscoveryBroadcastAddr
 }

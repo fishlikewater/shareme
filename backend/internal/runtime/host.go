@@ -12,16 +12,16 @@ import (
 	"sync"
 	"time"
 
-	"message-share/backend/internal/app"
-	"message-share/backend/internal/config"
-	"message-share/backend/internal/device"
-	"message-share/backend/internal/discovery"
-	"message-share/backend/internal/localfile"
-	"message-share/backend/internal/protocol"
-	"message-share/backend/internal/security"
-	"message-share/backend/internal/session"
-	"message-share/backend/internal/store"
-	"message-share/backend/internal/transfer"
+	"shareme/backend/internal/app"
+	"shareme/backend/internal/config"
+	"shareme/backend/internal/device"
+	"shareme/backend/internal/discovery"
+	"shareme/backend/internal/localfile"
+	"shareme/backend/internal/protocol"
+	"shareme/backend/internal/security"
+	"shareme/backend/internal/session"
+	"shareme/backend/internal/store"
+	"shareme/backend/internal/transfer"
 )
 
 type Options struct {
@@ -87,7 +87,7 @@ func (h *Host) Start(ctx context.Context) error {
 
 	dbPath := h.cfg.DatabasePath
 	if dbPath == "" {
-		dbPath = filepath.Join(h.cfg.DataDir, "message-share.db")
+		dbPath = filepath.Join(h.cfg.DataDir, "shareme.db")
 	}
 	db, err := store.Open(dbPath)
 	if err != nil {

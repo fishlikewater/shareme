@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/api"
+	"shareme/backend/internal/api"
 )
 
 func TestEventsStreamDeliversBacklogAndLiveEvents(t *testing.T) {

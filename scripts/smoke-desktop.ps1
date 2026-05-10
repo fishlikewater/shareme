@@ -19,7 +19,7 @@ if (-not $scriptPath) {
 $scriptDir = Split-Path -Parent $scriptPath
 $repoRoot = Split-Path -Parent $scriptDir
 $backendDir = Join-Path $repoRoot "backend"
-$binaryPath = Join-Path $backendDir "build\\bin\\message-share.exe"
+$binaryPath = Join-Path $backendDir "build\\bin\\shareme.exe"
 
 if (-not $SkipBuild) {
     & (Join-Path $scriptDir "build-desktop.ps1") -Platform "windows/amd64"
@@ -45,21 +45,21 @@ New-Item -ItemType Directory -Force -Path $homeDir | Out-Null
 
 $previousUserProfile = $env:USERPROFILE
 $previousHome = $env:HOME
-$previousDataDir = $env:MESSAGE_SHARE_DATA_DIR
-$previousUIReadyMarker = $env:MESSAGE_SHARE_UI_READY_MARKER
-$previousAgentTcpPort = $env:MESSAGE_SHARE_AGENT_TCP_PORT
-$previousAcceleratedDataPort = $env:MESSAGE_SHARE_ACCELERATED_DATA_PORT
-$previousDiscoveryUdpPort = $env:MESSAGE_SHARE_DISCOVERY_UDP_PORT
+$previousDataDir = $env:SHAREME_DATA_DIR
+$previousUIReadyMarker = $env:SHAREME_UI_READY_MARKER
+$previousAgentTcpPort = $env:SHAREME_AGENT_TCP_PORT
+$previousAcceleratedDataPort = $env:SHAREME_ACCELERATED_DATA_PORT
+$previousDiscoveryUdpPort = $env:SHAREME_DISCOVERY_UDP_PORT
 $process = $null
 
 try {
     $env:USERPROFILE = $homeDir
     $env:HOME = $homeDir
-    $env:MESSAGE_SHARE_DATA_DIR = $runtimeDir
-    $env:MESSAGE_SHARE_UI_READY_MARKER = $uiReadyMarker
-    $env:MESSAGE_SHARE_AGENT_TCP_PORT = $agentTcpPort
-    $env:MESSAGE_SHARE_ACCELERATED_DATA_PORT = $acceleratedDataPort
-    $env:MESSAGE_SHARE_DISCOVERY_UDP_PORT = $discoveryUdpPort
+    $env:SHAREME_DATA_DIR = $runtimeDir
+    $env:SHAREME_UI_READY_MARKER = $uiReadyMarker
+    $env:SHAREME_AGENT_TCP_PORT = $agentTcpPort
+    $env:SHAREME_ACCELERATED_DATA_PORT = $acceleratedDataPort
+    $env:SHAREME_DISCOVERY_UDP_PORT = $discoveryUdpPort
 
     $process = Start-Process -FilePath $binaryPath -WorkingDirectory $runDir -PassThru
     $configPath = Join-Path $runtimeDir "config.json"
@@ -145,9 +145,9 @@ finally {
     }
     $env:USERPROFILE = $previousUserProfile
     $env:HOME = $previousHome
-    $env:MESSAGE_SHARE_DATA_DIR = $previousDataDir
-    $env:MESSAGE_SHARE_UI_READY_MARKER = $previousUIReadyMarker
-    $env:MESSAGE_SHARE_AGENT_TCP_PORT = $previousAgentTcpPort
-    $env:MESSAGE_SHARE_ACCELERATED_DATA_PORT = $previousAcceleratedDataPort
-    $env:MESSAGE_SHARE_DISCOVERY_UDP_PORT = $previousDiscoveryUdpPort
+    $env:SHAREME_DATA_DIR = $previousDataDir
+    $env:SHAREME_UI_READY_MARKER = $previousUIReadyMarker
+    $env:SHAREME_AGENT_TCP_PORT = $previousAgentTcpPort
+    $env:SHAREME_ACCELERATED_DATA_PORT = $previousAcceleratedDataPort
+    $env:SHAREME_DISCOVERY_UDP_PORT = $previousDiscoveryUdpPort
 }

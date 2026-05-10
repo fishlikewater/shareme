@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const defaultRootDirName = ".message-share"
+const defaultRootDirName = ".shareme"
 
 type Layout struct {
 	RootDir          string
@@ -38,7 +38,7 @@ func ResolveLayout(rootDir string) Layout {
 		RootDir:          rootDir,
 		ConfigFilePath:   filepath.Join(rootDir, "config.json"),
 		IdentityFilePath: filepath.Join(rootDir, "local-device.json"),
-		DatabasePath:     filepath.Join(rootDir, "message-share.db"),
+		DatabasePath:     filepath.Join(rootDir, "shareme.db"),
 		LogDir:           filepath.Join(rootDir, "logs"),
 		TempDir:          filepath.Join(rootDir, "tmp"),
 		DownloadsDir:     filepath.Join(rootDir, "downloads"),

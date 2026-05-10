@@ -1,15 +1,15 @@
 ## Purpose
 
-定义 `message-share-agent` 在无窗口模式下提供仅限本机访问的 localhost Web UI 兼容入口、API 能力、事件同步、文件发送与构建验证要求。
+定义 `shareme-agent` 在无窗口模式下提供仅限本机访问的 localhost Web UI 兼容入口、API 能力、事件同步、文件发送与构建验证要求。
 
 ## Requirements
 
-### Requirement: 系统必须为 `message-share-agent` 提供仅限本机访问的 localhost Web UI 兼容入口
+### Requirement: 系统必须为 `shareme-agent` 提供仅限本机访问的 localhost Web UI 兼容入口
 
-系统 MUST 在 `message-share-agent` 启动成功后提供可由本机浏览器访问的 localhost Web UI。该入口 MUST 只监听回环地址，并 MUST 拒绝非 loopback 请求。系统 MUST 在启动日志中输出可访问的本地地址。
+系统 MUST 在 `shareme-agent` 启动成功后提供可由本机浏览器访问的 localhost Web UI。该入口 MUST 只监听回环地址，并 MUST 拒绝非 loopback 请求。系统 MUST 在启动日志中输出可访问的本地地址。
 
 #### Scenario: agent 启动后本机浏览器可以访问兼容入口
-- **WHEN** 用户启动 `message-share-agent`，且 runtime 与 localhost Web server 均成功启动
+- **WHEN** 用户启动 `shareme-agent`，且 runtime 与 localhost Web server 均成功启动
 - **THEN** 系统必须输出本地访问地址，并允许本机浏览器成功加载 Web UI
 
 #### Scenario: 非本机请求被拒绝

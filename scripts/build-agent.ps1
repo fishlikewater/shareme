@@ -1,5 +1,5 @@
 param(
-    [string]$Output = "dist\\message-share-agent.exe"
+    [string]$Output = "dist\\shareme-agent.exe"
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,7 +18,7 @@ $scriptDir = Split-Path -Parent $scriptPath
 $repoRoot = Split-Path -Parent $scriptDir
 $backendDir = Join-Path $repoRoot "backend"
 $frontendDir = Join-Path $repoRoot "frontend"
-$agentFrontendDir = Join-Path $backendDir "cmd\\message-share-agent\\frontend"
+$agentFrontendDir = Join-Path $backendDir "cmd\\shareme-agent\\frontend"
 $agentFrontendDistDir = Join-Path $agentFrontendDir "dist"
 $sourceFrontendDistDir = Join-Path $backendDir "frontend\\dist"
 $goCacheDir = Join-Path $repoRoot ".cache\\go-build"
@@ -62,7 +62,7 @@ try {
 
     Push-Location $backendDir
     try {
-        go build -o $outputPath ./cmd/message-share-agent
+        go build -o $outputPath ./cmd/shareme-agent
         if ($LASTEXITCODE -ne 0) {
             throw ("Agent build failed with exit code {0}" -f $LASTEXITCODE)
         }

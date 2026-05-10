@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"message-share/backend/internal/domain"
+	"shareme/backend/internal/domain"
 )
 
 func EnsureLocalDevice(identityFilePath string, name string) (domain.LocalDevice, error) {

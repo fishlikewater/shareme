@@ -16,7 +16,7 @@
 以下命令作为本轮收口的 fresh 验证基线，结果以最近一次实际执行输出为准：
 
 ```powershell
-& 'E:\Projects\IdeaProjects\person\message-share\scripts\test.ps1'
+& 'E:\Projects\IdeaProjects\person\shareme\scripts\test.ps1'
 ```
 
 结果：
@@ -25,7 +25,7 @@
 - 前端 `10` 个测试文件、`45` 条用例全量通过
 
 ```powershell
-$env:npm_config_cache='E:\Projects\IdeaProjects\person\message-share\.cache\npm'; npm run build
+$env:npm_config_cache='E:\Projects\IdeaProjects\person\shareme\.cache\npm'; npm run build
 ```
 
 结果：
@@ -33,23 +33,23 @@ $env:npm_config_cache='E:\Projects\IdeaProjects\person\message-share\.cache\npm'
 - 前端生产构建通过
 
 ```powershell
-& 'E:\Projects\IdeaProjects\person\message-share\scripts\build-desktop.ps1' -Platform 'windows/amd64'
+& 'E:\Projects\IdeaProjects\person\shareme\scripts\build-desktop.ps1' -Platform 'windows/amd64'
 ```
 
 结果：
 
 - Wails 桌面构建通过
-- 生成交付文件：`backend/build/bin/message-share.exe`
+- 生成交付文件：`backend/build/bin/shareme.exe`
 
 ```powershell
-& 'E:\Projects\IdeaProjects\person\message-share\scripts\smoke-desktop.ps1' -SkipBuild
+& 'E:\Projects\IdeaProjects\person\shareme\scripts\smoke-desktop.ps1' -SkipBuild
 ```
 
 结果：
 
 - 自动启动桌面产物并完成运行时初始化
 - 主界面完成加载后写出 UI ready marker
-- `config.json`、`local-device.json`、`message-share.db` 会在显式覆盖的运行目录下生成
+- `config.json`、`local-device.json`、`shareme.db` 会在显式覆盖的运行目录下生成
 
 ## 3. 需求到测试的闭环映射
 
@@ -114,7 +114,7 @@ $env:npm_config_cache='E:\Projects\IdeaProjects\person\message-share\.cache\npm'
 ### 4.1 环境
 
 - 两台已接入同一局域网的 Windows 机器
-- 双方均启动由 `scripts/build-desktop.ps1` 生成的 `message-share.exe`
+- 双方均启动由 `scripts/build-desktop.ps1` 生成的 `shareme.exe`
 - 双方均可打开桌面应用主界面
 
 ### 4.2 验收步骤

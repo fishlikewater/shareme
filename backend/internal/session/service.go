@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"message-share/backend/internal/domain"
+	"shareme/backend/internal/domain"
 )
 
 type Service struct {

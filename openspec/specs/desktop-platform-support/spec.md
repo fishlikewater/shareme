@@ -21,7 +21,7 @@ TBD - created by archiving change upgrade-to-wails-cross-platform-runtime. Updat
 
 #### Scenario: 目标平台构建产物可作为独立桌面应用启动
 - **WHEN** 为任一正式支持平台生成发布构建
-- **THEN** 构建产物必须能够作为该平台的独立桌面应用启动，并直接加载 Message Share 主界面
+- **THEN** 构建产物必须能够作为该平台的独立桌面应用启动，并直接加载 shareme 主界面
 
 #### Scenario: 三端构建共享一致的目录与运行语义
 - **WHEN** 不同正式支持平台上的构建产物启动并初始化运行环境
@@ -37,4 +37,4 @@ TBD - created by archiving change upgrade-to-wails-cross-platform-runtime. Updat
 
 #### Scenario: 用户目录解析遵循统一语义
 - **WHEN** 系统在任一正式支持平台上初始化默认目录
-- **THEN** 系统必须解析当前用户主目录，并在其下应用统一的 `.message-share` 目录语义
+- **THEN** 系统必须解析当前用户主目录，并在其下应用统一的 `.shareme` 目录语义

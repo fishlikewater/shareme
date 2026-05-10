@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"message-share/backend/internal/config"
+	"shareme/backend/internal/config"
 )
 
 func TestHostStartAndClose(t *testing.T) {
@@ -83,7 +83,7 @@ func newTestConfig(t *testing.T) config.AppConfig {
 		DiscoveryListenAddr:    "127.0.0.1:0",
 		DiscoveryBroadcastAddr: "",
 		DataDir:                dataDir,
-		DatabasePath:           filepath.Join(dataDir, "message-share.db"),
+		DatabasePath:           filepath.Join(dataDir, "shareme.db"),
 		DeviceName:             "测试设备",
 		IdentityFilePath:       filepath.Join(dataDir, "local-device.json"),
 		DefaultDownloadDir:     filepath.Join(dataDir, "downloads"),

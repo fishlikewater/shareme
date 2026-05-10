@@ -1,6 +1,6 @@
 ## Why
 
-当前界面仍带有较强展示型首页结构：大标题、重卡片和暖色渐变占据首屏，用户进入后需要先理解页面层级，再完成“选择设备、判断状态、发送内容”的核心路径。Message Share 已转为 Wails 桌面主入口与 localhost 兼容入口共用的工作工具，需要更直接、更清爽的工作台式 UI。
+当前界面仍带有较强展示型首页结构：大标题、重卡片和暖色渐变占据首屏，用户进入后需要先理解页面层级，再完成“选择设备、判断状态、发送内容”的核心路径。shareme 已转为 Wails 桌面主入口与 localhost 兼容入口共用的工作工具，需要更直接、更清爽的工作台式 UI。
 
 本变更将界面重心从“产品展示”调整为“立即操作”，降低设备状态判断和设备切换成本，并改善窄屏与桌面窗口缩放时的可用性。
 
@@ -17,7 +17,7 @@
 
 ### New Capabilities
 
-- `workbench-ui`: 定义 Message Share 前端工作台布局、设备 Dock、会话主区、状态表达、响应式行为和可访问性要求。
+- `workbench-ui`: 定义 shareme 前端工作台布局、设备 Dock、会话主区、状态表达、响应式行为和可访问性要求。
 
 ### Modified Capabilities
 
@@ -25,7 +25,7 @@
 
 ## Impact
 
-- 影响入口：Wails 桌面 UI 与 `message-share-agent` localhost Web UI 共享前端。
+- 影响入口：Wails 桌面 UI 与 `shareme-agent` localhost Web UI 共享前端。
 - 主要代码：`frontend/src/AppShell.tsx`、`frontend/src/styles.css`、`frontend/src/pages/DiscoveryPage.tsx`、`frontend/src/components/DeviceList.tsx`、`frontend/src/components/ChatPane.tsx`、`frontend/src/components/HealthBanner.tsx`、`frontend/src/components/TransferStatusBanner.tsx`、`frontend/src/components/PairCodeDialog.tsx`。
 - 测试影响：需要更新或新增 Testing Library 测试，覆盖设备切换、侧栏折叠、状态展示、未配对/不可达提示、发送入口可用性和响应式关键语义。
 - 构建验证：至少执行 `npm test` 与 `npm run build`；实现完成后使用浏览器检查 375、768、1024、1440 宽度。

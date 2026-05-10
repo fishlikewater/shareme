@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"message-share/backend/internal/discovery"
-	"message-share/backend/internal/security"
+	"shareme/backend/internal/discovery"
+	"shareme/backend/internal/security"
 )
 
 const (

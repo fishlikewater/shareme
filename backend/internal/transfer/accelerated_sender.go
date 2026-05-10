@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"message-share/backend/internal/protocol"
+	"shareme/backend/internal/protocol"
 )
 
 const acceleratedDefaultChunkSize int64 = 8 << 20

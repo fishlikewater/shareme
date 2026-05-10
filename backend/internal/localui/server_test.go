@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	appruntime "message-share/backend/internal/app"
-	"message-share/backend/internal/api"
+	"shareme/backend/internal/api"
+	appruntime "shareme/backend/internal/app"
 )
 
 type fakeCommands struct{}

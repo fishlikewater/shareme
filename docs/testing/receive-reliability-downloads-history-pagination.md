@@ -14,7 +14,7 @@
 
 ```powershell
 Set-Location backend
-$env:GOCACHE='E:\Projects\IdeaProjects\person\message-share\.cache\go-build'
+$env:GOCACHE='E:\Projects\IdeaProjects\person\shareme\.cache\go-build'
 $env:GOTELEMETRY='off'
 go test -count=1 -p 1 ./...
 ```
@@ -26,7 +26,7 @@ go test -count=1 -p 1 ./...
 
 ```powershell
 Set-Location frontend
-$env:npm_config_cache='E:\Projects\IdeaProjects\person\message-share\.cache\npm'
+$env:npm_config_cache='E:\Projects\IdeaProjects\person\shareme\.cache\npm'
 npm test
 ```
 
@@ -36,7 +36,7 @@ npm test
 - 前端总计 `45` 条用例全部通过。
 
 ```powershell
-& 'E:\Projects\IdeaProjects\person\message-share\scripts\test.ps1'
+& 'E:\Projects\IdeaProjects\person\shareme\scripts\test.ps1'
 ```
 
 结果：
@@ -46,23 +46,23 @@ npm test
 - 脚本内前端 `10` 个测试文件、`45` 条用例全部通过。
 
 ```powershell
-& 'E:\Projects\IdeaProjects\person\message-share\scripts\build-desktop.ps1' -Platform 'windows/amd64'
+& 'E:\Projects\IdeaProjects\person\shareme\scripts\build-desktop.ps1' -Platform 'windows/amd64'
 ```
 
 结果：
 
 - Wails 桌面构建通过。
-- 生成交付文件 `backend/build/bin/message-share.exe`。
+- 生成交付文件 `backend/build/bin/shareme.exe`。
 
 ```powershell
-& 'E:\Projects\IdeaProjects\person\message-share\scripts\smoke-desktop.ps1' -SkipBuild
+& 'E:\Projects\IdeaProjects\person\shareme\scripts\smoke-desktop.ps1' -SkipBuild
 ```
 
 结果：
 
-- `message-share.exe` 可完成桌面启动链路并初始化运行目录。
+- `shareme.exe` 可完成桌面启动链路并初始化运行目录。
 - 主界面完成加载后会写出 UI ready marker。
-- `config.json`、`local-device.json`、`message-share.db` 会在显式覆盖目录下生成。
+- `config.json`、`local-device.json`、`shareme.db` 会在显式覆盖目录下生成。
 
 说明：
 
@@ -141,6 +141,6 @@ npm test
 
 ## 4. 用户可见行为
 
-- 接收文件后，最终文件落在系统下载目录；若系统下载目录不可用，则回退到 `~/.message-share/downloads`。
+- 接收文件后，最终文件落在系统下载目录；若系统下载目录不可用，则回退到 `~/.shareme/downloads`。
 - 桌面会话首屏更聚焦，只显示最近 10 条，向上滚动再按需取历史。
 - 新消息到达、历史分页加载、轮询刷新三者并行时，消息列表保持稳定，不闪烁、不重置、不重复。

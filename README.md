@@ -1,6 +1,6 @@
-# Message Share
+# shareme
 
-Message Share 是一个面向局域网场景的桌面应用，目标是让多台电脑在同一网段内通过桌面 UI 方便地发送文字与文件。
+shareme 是一个面向局域网场景的桌面应用，目标是让多台电脑在同一网段内通过桌面 UI 方便地发送文字与文件。
 
 当前正式交付形态为 `Wails + Go + React` 的单桌面应用入口，不再依赖手动打开 `localhost` 页面。
 
@@ -10,7 +10,7 @@ Message Share 是一个面向局域网场景的桌面应用，目标是让多台
 - 文字消息发送
 - 文件发送与大文件直读本地磁盘发送
 - 桌面宿主事件驱动 UI，不依赖本地 HTTP UI 入口
-- 默认将配置与运行数据统一收敛到用户目录下的 `.message-share`
+- 默认将配置与运行数据统一收敛到用户目录下的 `.shareme`
 
 ## 当前边界
 
@@ -35,16 +35,16 @@ Message Share 是一个面向局域网场景的桌面应用，目标是让多台
 
 ## 运行数据目录
 
-应用默认把数据放在当前用户主目录下的 `.message-share` 中：
+应用默认把数据放在当前用户主目录下的 `.shareme` 中：
 
-- `~/.message-share/config.json`：用户可编辑配置
-- `~/.message-share/local-device.json`：本机设备身份
-- `~/.message-share/message-share.db`：SQLite 数据库
-- `~/.message-share/downloads/`：下载回退目录
-- `~/.message-share/logs/`：日志目录
-- `~/.message-share/tmp/`：临时文件目录
+- `~/.shareme/config.json`：用户可编辑配置
+- `~/.shareme/local-device.json`：本机设备身份
+- `~/.shareme/shareme.db`：SQLite 数据库
+- `~/.shareme/downloads/`：下载回退目录
+- `~/.shareme/logs/`：日志目录
+- `~/.shareme/tmp/`：临时文件目录
 
-如果设置了 `MESSAGE_SHARE_DATA_DIR`，则优先使用该目录作为运行根目录。
+如果设置了 `SHAREME_DATA_DIR`，则优先使用该目录作为运行根目录。
 
 ## 环境准备
 
@@ -72,7 +72,7 @@ Wails 官方安装与构建文档：
 说明：
 
 - Wails 官方文档指出，Linux 缺少 `webkit2gtk-4.0` 的发行版可能需要额外处理；例如 Ubuntu 24.04 一类环境，可能需要 `libwebkit2gtk-4.1-dev` 与 `-tags webkit2_41`
-- 本仓库当前脚本没有内置该 Linux 特殊标签，如遇此类发行版，请结合 Wails 官方文档调整本地构建命令
+- 本仓库的 `scripts/build-desktop.sh` 支持通过 `WAILS_BUILD_TAGS` 传入 Wails 构建标签；Ubuntu 24.04 一类环境可用 `WAILS_BUILD_TAGS=webkit2_41 ./scripts/build-desktop.sh linux/amd64`
 
 ## 本地开发
 
@@ -97,9 +97,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev-desktop.ps1
 
 ### 构建产物位置
 
-- Windows：`backend/build/bin/message-share.exe`
-- macOS：`backend/build/bin/message-share.app`
-- Linux：`backend/build/bin/message-share`
+- Windows：`backend/build/bin/shareme.exe`
+- macOS：`backend/build/bin/shareme.app`
+- Linux：`backend/build/bin/shareme`
 
 ### Windows 构建
 
@@ -112,7 +112,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-desktop.ps1 -Platform w
 构建成功后产物位于：
 
 ```text
-backend/build/bin/message-share.exe
+backend/build/bin/shareme.exe
 ```
 
 ### macOS 构建
@@ -133,7 +133,7 @@ backend/build/bin/message-share.exe
 构建成功后产物位于：
 
 ```text
-backend/build/bin/message-share.app
+backend/build/bin/shareme.app
 ```
 
 ### Linux 构建
@@ -147,7 +147,7 @@ backend/build/bin/message-share.app
 构建成功后产物位于：
 
 ```text
-backend/build/bin/message-share
+backend/build/bin/shareme
 ```
 
 ### 重要说明：跨平台构建边界
@@ -165,6 +165,15 @@ backend/build/bin/message-share
 - 这不等价于在 Linux 或 macOS 上完成真正的 Wails 桌面产物构建与 smoke
 
 如果你需要 macOS / Linux 的正式桌面包，请在对应平台执行本仓库脚本。
+
+## GitHub 多平台发布构建
+
+仓库包含 `.github/workflows/release.yml`，用于在 GitHub Actions 上构建发布产物：
+
+- 手动触发：在 GitHub Actions 页面运行 `Release`
+- 标签触发：推送 `v*` 标签，例如 `v0.1.0`
+- 构建矩阵：Windows `amd64`、macOS `universal`、Linux `amd64`
+- 发布产物：桌面应用与 `shareme-agent` 一并打包；标签触发时自动创建 GitHub Release
 
 ## 冒烟验证
 
@@ -249,7 +258,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-desktop.ps1 -Platform w
 
 ## Headless Agent + Localhost Web UI
 
-除正式的 Wails 桌面入口外，仓库还提供一条兼容入口：`backend/cmd/message-share-agent`。
+除正式的 Wails 桌面入口外，仓库还提供一条兼容入口：`backend/cmd/shareme-agent`。
 
 这条入口会启动无窗口 agent，并在本机提供 localhost Web UI：
 

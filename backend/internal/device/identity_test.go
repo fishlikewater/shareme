@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"message-share/backend/internal/domain"
+	"shareme/backend/internal/domain"
 )
 
 func TestEnsureLocalDeviceGeneratesDeviceNameAndKeys(t *testing.T) {

@@ -1,5 +1,6 @@
 param(
-    [string]$Platform = "windows/amd64"
+    [string]$Platform = "windows/amd64",
+    [string]$BuildTags = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +26,11 @@ Push-Location $backendDir
 try {
     $env:GOCACHE = $goCacheDir
     $env:GOTELEMETRY = "off"
-    go run github.com/wailsapp/wails/v2/cmd/wails@v2.12.0 build -clean -platform $Platform
+    $buildArgs = @("run", "github.com/wailsapp/wails/v2/cmd/wails@v2.12.0", "build", "-clean", "-platform", $Platform)
+    if (-not [string]::IsNullOrWhiteSpace($BuildTags)) {
+        $buildArgs += @("-tags", $BuildTags)
+    }
+    go @buildArgs
 
     if ($LASTEXITCODE -ne 0) {
         throw ("Desktop build failed with exit code {0}" -f $LASTEXITCODE)

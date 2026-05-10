@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"message-share/backend/internal/device"
+	"shareme/backend/internal/device"
 )
 
 const (
 	migrationMarkerFileName           = ".migrated"
 	migrationInProgressMarkerFileName = ".migration-in-progress"
+	legacyDatabaseFileName            = "message-share.db"
 )
 
 var (
@@ -49,12 +50,15 @@ func LegacyDataDirCandidates() []string {
 	if configDir, err := legacyUserConfigDir(); err == nil {
 		appendCandidate(filepath.Join(configDir, "MessageShare"))
 		appendCandidate(filepath.Join(configDir, "message-share"))
+		appendCandidate(filepath.Join(configDir, "shareme"))
 	}
 	if homeDir, err := legacyUserHomeDir(); err == nil {
 		appendCandidate(filepath.Join(homeDir, "MessageShare"))
+		appendCandidate(filepath.Join(homeDir, ".message-share"))
 		appendCandidate(filepath.Join(homeDir, "AppData", "Roaming", "MessageShare"))
 		appendCandidate(filepath.Join(homeDir, ".config", "MessageShare"))
 		appendCandidate(filepath.Join(homeDir, ".config", "message-share"))
+		appendCandidate(filepath.Join(homeDir, ".config", "shareme"))
 		appendCandidate(filepath.Join(homeDir, "Library", "Application Support", "MessageShare"))
 	}
 
@@ -107,7 +111,7 @@ func migrationAlreadyHandled(rootDir string) bool {
 
 func hasInitializedRuntimeData(rootDir string) bool {
 	layout := ResolveLayout(rootDir)
-	if hasValidLocalDeviceFile(layout.IdentityFilePath) || pathExists(layout.DatabasePath) {
+	if hasValidLocalDeviceFile(layout.IdentityFilePath) || hasAnyDatabaseFile(rootDir) {
 		return true
 	}
 
@@ -118,7 +122,7 @@ func hasMigratableRuntimeData(rootDir string) bool {
 	layout := ResolveLayout(rootDir)
 	return hasValidSettingsFile(layout.ConfigFilePath) ||
 		hasValidLocalDeviceFile(layout.IdentityFilePath) ||
-		pathExists(layout.DatabasePath)
+		hasAnyDatabaseFile(rootDir)
 }
 
 func pathExists(path string) bool {
@@ -141,7 +145,6 @@ func copyLegacyRuntimeData(legacyDir string, newRootDir string) error {
 	}{
 		{src: legacyLayout.ConfigFilePath, dst: newLayout.ConfigFilePath, shouldCopy: hasValidSettingsFile},
 		{src: legacyLayout.IdentityFilePath, dst: newLayout.IdentityFilePath, shouldCopy: hasValidLocalDeviceFile},
-		{src: legacyLayout.DatabasePath, dst: newLayout.DatabasePath, shouldCopy: pathExists},
 	}
 	for _, item := range copyFiles {
 		if item.shouldCopy != nil && !item.shouldCopy(item.src) {
@@ -151,6 +154,9 @@ func copyLegacyRuntimeData(legacyDir string, newRootDir string) error {
 			return err
 		}
 	}
+	if err := copyFirstExistingFileIfMissing(databasePathCandidates(legacyDir), newLayout.DatabasePath); err != nil {
+		return err
+	}
 
 	if err := ensureDirIfLegacyExists(legacyLayout.LogDir, newLayout.LogDir); err != nil {
 		return err
@@ -159,6 +165,34 @@ func copyLegacyRuntimeData(legacyDir string, newRootDir string) error {
 		return err
 	}
 
+	return nil
+}
+
+func hasAnyDatabaseFile(rootDir string) bool {
+	for _, path := range databasePathCandidates(rootDir) {
+		if pathExists(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func databasePathCandidates(rootDir string) []string {
+	layout := ResolveLayout(rootDir)
+	legacyPath := filepath.Join(rootDir, legacyDatabaseFileName)
+	if filepath.Clean(layout.DatabasePath) == filepath.Clean(legacyPath) {
+		return []string{layout.DatabasePath}
+	}
+	return []string{layout.DatabasePath, legacyPath}
+}
+
+func copyFirstExistingFileIfMissing(srcPaths []string, dst string) error {
+	for _, src := range srcPaths {
+		if !pathExists(src) {
+			continue
+		}
+		return copyFileIfMissing(src, dst)
+	}
 	return nil
 }
 

@@ -12,10 +12,10 @@ STABILITY_MILLISECONDS="${SMOKE_STABILITY_MILLISECONDS:-1000}"
 detect_binary() {
   case "$(uname -s)" in
     Darwin)
-      echo "${BACKEND_DIR}/build/bin/message-share.app/Contents/MacOS/message-share"
+      echo "${BACKEND_DIR}/build/bin/shareme.app/Contents/MacOS/shareme"
       ;;
     *)
-      echo "${BACKEND_DIR}/build/bin/message-share"
+      echo "${BACKEND_DIR}/build/bin/shareme"
       ;;
   esac
 }
@@ -46,7 +46,7 @@ DISCOVERY_UDP_PORT="$((BASE_PORT + 2))"
 mkdir -p "${RUNTIME_DIR}" "${HOME_DIR}"
 
 BINARY_PATH="$(detect_binary)"
-(cd "${RUN_DIR}" && HOME="${HOME_DIR}" MESSAGE_SHARE_DATA_DIR="${RUNTIME_DIR}" MESSAGE_SHARE_UI_READY_MARKER="${UI_READY_MARKER}" MESSAGE_SHARE_AGENT_TCP_PORT="${AGENT_TCP_PORT}" MESSAGE_SHARE_ACCELERATED_DATA_PORT="${ACCELERATED_DATA_PORT}" MESSAGE_SHARE_DISCOVERY_UDP_PORT="${DISCOVERY_UDP_PORT}" "${BINARY_PATH}") &
+(cd "${RUN_DIR}" && HOME="${HOME_DIR}" SHAREME_DATA_DIR="${RUNTIME_DIR}" SHAREME_UI_READY_MARKER="${UI_READY_MARKER}" SHAREME_AGENT_TCP_PORT="${AGENT_TCP_PORT}" SHAREME_ACCELERATED_DATA_PORT="${ACCELERATED_DATA_PORT}" SHAREME_DISCOVERY_UDP_PORT="${DISCOVERY_UDP_PORT}" "${BINARY_PATH}") &
 APP_PID=$!
 APP_EXIT=""
 

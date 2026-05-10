@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"log"
 
-	"message-share/backend/internal/frontendassets"
+	"shareme/backend/internal/frontendassets"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -26,7 +26,7 @@ func main() {
 	}
 
 	if err := wails.Run(&options.App{
-		Title:     "Message Share",
+		Title:     "shareme",
 		Width:     1360,
 		Height:    900,
 		MinWidth:  1080,

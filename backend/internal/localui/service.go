@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"message-share/backend/internal/api"
-	appruntime "message-share/backend/internal/app"
+	"shareme/backend/internal/api"
+	appruntime "shareme/backend/internal/app"
 )
 
 type RuntimeCommands interface {

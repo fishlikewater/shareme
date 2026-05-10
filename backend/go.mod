@@ -1,4 +1,4 @@
-module message-share/backend
+module shareme/backend
 
 go 1.25.0
 

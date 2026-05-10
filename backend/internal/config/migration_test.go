@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"message-share/backend/internal/device"
+	"shareme/backend/internal/device"
 )
 
 func TestMigrateLegacyDataCopiesRuntimeFilesAndCreatesMarker(t *testing.T) {
@@ -25,7 +25,7 @@ func TestMigrateLegacyDataCopiesRuntimeFilesAndCreatesMarker(t *testing.T) {
 
 	assertFileContent(t, filepath.Join(newRootDir, "config.json"), legacy.configContent)
 	assertFileContent(t, filepath.Join(newRootDir, "local-device.json"), legacy.identityContent)
-	assertFileContent(t, filepath.Join(newRootDir, "message-share.db"), legacy.databaseContent)
+	assertFileContent(t, filepath.Join(newRootDir, "shareme.db"), legacy.databaseContent)
 	assertMigrationDirExists(t, filepath.Join(newRootDir, "logs"))
 	assertMigrationDirExists(t, filepath.Join(newRootDir, "downloads"))
 	assertFileContent(t, filepath.Join(newRootDir, migrationMarkerFileName), []byte(legacyDir))
@@ -55,7 +55,7 @@ func TestMigrateLegacyDataDoesNotOverwriteInitializedNewRoot(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(newRootDir, "local-device.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected identity file to remain absent when new root already initialized, got %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(newRootDir, "message-share.db")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(newRootDir, "shareme.db")); !os.IsNotExist(err) {
 		t.Fatalf("expected database file to remain absent when new root already initialized, got %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(newRootDir, migrationMarkerFileName)); !os.IsNotExist(err) {
@@ -85,7 +85,7 @@ func TestMigrateLegacyDataTreatsInvalidConfigOnlyNewRootAsUninitialized(t *testi
 
 	assertFileContent(t, filepath.Join(newRootDir, "config.json"), legacy.configContent)
 	assertFileContent(t, filepath.Join(newRootDir, "local-device.json"), legacy.identityContent)
-	assertFileContent(t, filepath.Join(newRootDir, "message-share.db"), legacy.databaseContent)
+	assertFileContent(t, filepath.Join(newRootDir, "shareme.db"), legacy.databaseContent)
 	assertFileContent(t, filepath.Join(newRootDir, migrationMarkerFileName), []byte(legacyDir))
 }
 
@@ -128,7 +128,7 @@ func TestMigrateLegacyDataResumesAfterPartialFailure(t *testing.T) {
 
 	assertFileContent(t, filepath.Join(newRootDir, "config.json"), legacy.configContent)
 	assertFileContent(t, filepath.Join(newRootDir, "local-device.json"), legacy.identityContent)
-	assertFileContent(t, filepath.Join(newRootDir, "message-share.db"), legacy.databaseContent)
+	assertFileContent(t, filepath.Join(newRootDir, "shareme.db"), legacy.databaseContent)
 	assertFileContent(t, filepath.Join(newRootDir, migrationMarkerFileName), []byte(legacyDir))
 	if _, statErr := os.Stat(filepath.Join(newRootDir, migrationInProgressMarkerFileName)); !os.IsNotExist(statErr) {
 		t.Fatalf("expected in-progress migration marker to be removed, got %v", statErr)
@@ -156,7 +156,7 @@ func TestMigrateLegacyDataTreatsStructurallyInvalidIdentityAsUninitialized(t *te
 
 	assertFileContent(t, filepath.Join(newRootDir, "config.json"), legacy.configContent)
 	assertFileContent(t, filepath.Join(newRootDir, "local-device.json"), legacy.identityContent)
-	assertFileContent(t, filepath.Join(newRootDir, "message-share.db"), legacy.databaseContent)
+	assertFileContent(t, filepath.Join(newRootDir, "shareme.db"), legacy.databaseContent)
 	assertFileContent(t, filepath.Join(newRootDir, migrationMarkerFileName), []byte(legacyDir))
 }
 
@@ -173,7 +173,7 @@ func TestMigrateLegacyDataResumesAfterPartialDatabaseCopyFailure(t *testing.T) {
 	injectedFailure := true
 	migrationCopyStream = func(dst io.Writer, src io.Reader) (int64, error) {
 		dstFile, ok := dst.(*os.File)
-		if injectedFailure && ok && strings.HasPrefix(filepath.Base(dstFile.Name()), "message-share.db.migration-") {
+		if injectedFailure && ok && strings.HasPrefix(filepath.Base(dstFile.Name()), "shareme.db.migration-") {
 			injectedFailure = false
 			buffer := make([]byte, 4)
 			readBytes, readErr := src.Read(buffer)
@@ -197,7 +197,7 @@ func TestMigrateLegacyDataResumesAfterPartialDatabaseCopyFailure(t *testing.T) {
 		t.Fatal("expected migration to fail during database copy")
 	}
 
-	if _, statErr := os.Stat(filepath.Join(newRootDir, "message-share.db")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(newRootDir, "shareme.db")); !os.IsNotExist(statErr) {
 		t.Fatalf("expected database file to stay absent after partial copy failure, got %v", statErr)
 	}
 	assertFileContent(t, filepath.Join(newRootDir, migrationInProgressMarkerFileName), []byte(legacyDir))
@@ -212,7 +212,7 @@ func TestMigrateLegacyDataResumesAfterPartialDatabaseCopyFailure(t *testing.T) {
 
 	assertFileContent(t, filepath.Join(newRootDir, "config.json"), legacy.configContent)
 	assertFileContent(t, filepath.Join(newRootDir, "local-device.json"), legacy.identityContent)
-	assertFileContent(t, filepath.Join(newRootDir, "message-share.db"), legacy.databaseContent)
+	assertFileContent(t, filepath.Join(newRootDir, "shareme.db"), legacy.databaseContent)
 	assertFileContent(t, filepath.Join(newRootDir, migrationMarkerFileName), []byte(legacyDir))
 }
 
@@ -228,7 +228,7 @@ func TestMigrateLegacyDataRunsOnlyOnceWhenMarkerExists(t *testing.T) {
 		t.Fatalf("first migrate legacy data: %v", err)
 	}
 
-	for _, name := range []string{"config.json", "local-device.json", "message-share.db"} {
+	for _, name := range []string{"config.json", "local-device.json", "shareme.db"} {
 		if err := os.Remove(filepath.Join(newRootDir, name)); err != nil {
 			t.Fatalf("remove migrated file %s: %v", name, err)
 		}
@@ -271,10 +271,14 @@ func TestLegacyDataDirCandidatesIncludeHistoricalDefaults(t *testing.T) {
 	candidates := LegacyDataDirCandidates()
 	expected := []string{
 		filepath.Join(configBaseDir, "MessageShare"),
+		filepath.Join(configBaseDir, "message-share"),
+		filepath.Join(configBaseDir, "shareme"),
 		filepath.Join(homeDir, "MessageShare"),
+		filepath.Join(homeDir, ".message-share"),
 		filepath.Join(homeDir, "AppData", "Roaming", "MessageShare"),
 		filepath.Join(homeDir, ".config", "MessageShare"),
 		filepath.Join(homeDir, ".config", "message-share"),
+		filepath.Join(homeDir, ".config", "shareme"),
 		filepath.Join(homeDir, "Library", "Application Support", "MessageShare"),
 	}
 	for _, want := range expected {
@@ -316,7 +320,7 @@ func writeLegacyRuntimeData(t *testing.T, rootDir string) legacyRuntimeData {
 		t.Fatalf("read legacy identity: %v", err)
 	}
 	data.identityContent = content
-	if err := os.WriteFile(filepath.Join(rootDir, "message-share.db"), data.databaseContent, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(rootDir, legacyDatabaseFileName), data.databaseContent, 0o600); err != nil {
 		t.Fatalf("write legacy database: %v", err)
 	}
 	return data

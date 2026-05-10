@@ -7,6 +7,8 @@ description: "Record work progress after the agreed executor has tested and comm
 
 **Do NOT run `git commit` directly** — the scripts below handle their own commits for `.trellis/` metadata. You only need to read git history (`git log`, `git status`, `git diff`) and run the Python scripts.
 
+If the task used `docs/superpowers/plans/*.md`, make sure that plan is aligned with the final implementation state before archiving or recording the session.
+
 ---
 
 ## Record Work Progress

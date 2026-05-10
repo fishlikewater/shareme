@@ -31,6 +31,7 @@ superpowers 是执行流程层，负责：
 - 制定和执行实现步骤
 - 推动测试、调试、评审
 - 组织多 agent 并行开发或 review
+- 维护执行期计划状态，包括 checkbox、当前执行状态、验证结果、review 结论和阻塞信息
 
 superpowers 不负责替代 OpenSpec 管理正式变更文档。
 
@@ -81,6 +82,9 @@ superpowers 不负责替代 OpenSpec 管理正式变更文档。
 - 以 `tasks.md` 为唯一任务清单
 - 以 `specs/**/*.md` 为验收基线
 - 代码中途发现新约束或新范围，先回写 OpenSpec，再继续实现
+- 如果使用 `docs/superpowers/plans/*.md` 承接实现步骤，该计划在执行期必须视为活文档
+- 已完成且验证通过的步骤应及时从 `- [ ]` 改为 `- [x]`
+- 未完成、被阻塞或尚未验证的步骤不得提前勾选，应在计划中补充原因或当前状态
 
 ### 阶段 4：调试
 
@@ -104,6 +108,7 @@ superpowers 不负责替代 OpenSpec 管理正式变更文档。
 
 - 先验证，再宣称完成
 - review 结论必须回到 OpenSpec 语义上判断，而不是只看“代码像是对的”
+- 宣称完成前，必须确认计划文档、OpenSpec `tasks.md`、Trellis 任务状态与实际验证证据一致
 
 ## 4. 仓库内落点约定
 
@@ -126,6 +131,18 @@ superpowers 不负责替代 OpenSpec 管理正式变更文档。
 - 中间推演材料
 
 辅助工件不能替代 OpenSpec 正式工件。
+
+### 执行期计划文档
+
+`docs/superpowers/plans/*.md` 不是正式需求来源，但只要某个计划进入执行期，就必须承担执行状态记录职责。
+
+执行期计划至少应保持：
+
+- 使用 checkbox 语法记录步骤状态
+- 有最新的当前执行状态、验证结果、review 结论或阻塞说明
+- 已完成步骤必须有对应实现或验证证据
+- 未完成步骤不得因为代码局部可用而提前勾选
+- 完成前必须核对计划状态、OpenSpec `tasks.md` 和 Trellis 任务状态不冲突
 
 ## 5. 对话里的推荐口令
 
@@ -163,12 +180,12 @@ superpowers 不负责替代 OpenSpec 管理正式变更文档。
 
 当前已经按该模式纳管的变更：
 
-- `add-accelerated-large-file-transfer`
+- `modernize-workbench-ui`
 
 对应目录：
 
-- [proposal.md](E:\Projects\IdeaProjects\person\message-share\openspec\changes\add-accelerated-large-file-transfer\proposal.md)
-- [design.md](E:\Projects\IdeaProjects\person\message-share\openspec\changes\add-accelerated-large-file-transfer\design.md)
-- [tasks.md](E:\Projects\IdeaProjects\person\message-share\openspec\changes\add-accelerated-large-file-transfer\tasks.md)
+- [proposal.md](../../openspec/changes/modernize-workbench-ui/proposal.md)
+- [design.md](../../openspec/changes/modernize-workbench-ui/design.md)
+- [tasks.md](../../openspec/changes/modernize-workbench-ui/tasks.md)
 
 这就是后续“OpenSpec 管需求和计划，superpowers 负责实施”的基准示例。

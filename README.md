@@ -21,17 +21,63 @@ shareme 是一个面向局域网场景的桌面应用，目标是让多台电脑
 
 ## 技术栈
 
-- 后端：Go、Wails v2、SQLite
-- 前端：React 18、TypeScript、Vite
+- 后端：Go 1.25、Wails v2.12、SQLite
+- 前端：React 18、TypeScript、Vite、Vitest、Testing Library
 - 桌面宿主：Wails Desktop Runtime
+- 兼容入口：`shareme-agent` 本机 loopback Web UI，复用同一套 React 前端
 
 ## 仓库结构
 
 - `backend/`：Go 桌面宿主、运行时核心、配置与本地存储
 - `frontend/`：React 前端界面
 - `scripts/`：开发、构建、冒烟验证、全量验证脚本
+- `.github/workflows/`：GitHub Actions 发布构建流程
+- `.trellis/`：任务、上下文、开发者工作区和项目开发工作流
+- `.agents/skills/`：本仓本地技能入口，例如 start、finish-work、record-session
+- `docs/process/`：OpenSpec、superpowers、Trellis 之间的协作流程说明
+- `docs/superpowers/`：历史设计稿、执行计划和辅助推演材料
 - `docs/testing/`：当前有效的验证记录与测试说明
-- `openspec/changes/upgrade-to-wails-cross-platform-runtime/`：本轮桌面化改造的正式变更工件
+- `openspec/`：正式行为变更工件；活跃变更位于 `openspec/changes/`，已完成变更归档到 `openspec/changes/archive/`
+
+## 协作流程
+
+本项目已经按 `workflow-starter` 的流程层接入，但 README 仍以 `shareme` 的真实项目事实为准。模板内容只作为判断方式参考，不能覆盖当前仓库里的技术栈、目录、脚本和交付边界。
+
+协作入口：
+
+- `AGENTS.md`：项目总约定、语言规则、提交口径和协作原则
+- `.trellis/workflow.md`：会话开始、任务分级、开发、验证和收尾流程
+- `.trellis/spec/frontend/`：前端目录、组件、Hook、状态、类型和质量规范
+- `.trellis/spec/backend/`：后端目录、数据库、错误处理、日志和质量规范
+- `.trellis/spec/guides/`：跨 Wails、localhost agent、前端、SQLite、传输协议的风险检查
+- `docs/process/openspec-superpowers-workflow.md`：OpenSpec 与 superpowers 的职责分工
+
+变更分级按当前仓库规则执行：
+
+- `L0`：文档、测试、重构、脚本或协作流程调整；无用户可见行为、API、数据结构变化，可直接进入 Trellis。
+- `L1`：单模块用户行为、错误语义、命令参数、UI 交互变化，先补 OpenSpec change，再写计划并执行。
+- `L2`：跨 Wails 桌面、localhost agent、前端 API、SQLite、传输协议、安全或架构边界变化，需要补齐 design 并完成更严格 review。
+
+行为变更默认走 `OpenSpec + superpowers + Trellis`：
+
+- `OpenSpec` 管正式变更：`proposal.md`、`design.md`、`specs/**/*.md`、`tasks.md`
+- `superpowers` 管探索、计划、执行、调试、验证和 review
+- `Trellis` 管执行上下文、任务目录、journal 与会话留痕
+- 如果 `docs/superpowers/plans/*.md` 进入执行期，它就是活文档；完成状态、验证结果和阻塞信息应随实现同步回写
+
+首次使用协作脚本时，先初始化开发者身份，再读取上下文：
+
+```bash
+python3 ./.trellis/scripts/init_developer.py <your-name>
+python3 ./.trellis/scripts/get_context.py
+python3 ./.trellis/scripts/task.py list
+```
+
+如涉及 OpenSpec change，至少验证目标变更：
+
+```bash
+openspec validate --strict --type change <change-slug>
+```
 
 ## 运行数据目录
 

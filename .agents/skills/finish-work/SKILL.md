@@ -47,6 +47,11 @@ Pop-Location
 - [ ] Does `.trellis/spec/guides/` need updates?
   - New cross-layer flows, lessons from bugs
 
+**Execution Plan Docs**:
+- [ ] If `docs/superpowers/plans/*.md` was used for this task, is the plan still synchronized with the latest implementation and validation state?
+- [ ] Are completed steps checked off only after they were actually implemented and verified?
+- [ ] Are current status, review conclusions, and blockers recorded instead of left implicit?
+
 **Key Question**: 
 > "If I fixed a bug or discovered something non-obvious, should I document it so future me (or others) won't hit the same issue?"
 

@@ -4,10 +4,10 @@
 
 - 数据库：SQLite，驱动为 `modernc.org/sqlite`。
 - 打开入口：`backend/internal/store/sqlite.go` 的 `Open`。
-- 默认路径：`~/.message-share/message-share.db`，由 `config.ResolveLayout` 间接确定。
+- 默认路径：`~/.shareme/shareme.db`，由 `config.ResolveLayout` 间接确定。
 - 初始化方式：`Open` 中执行 `create table if not exists` 与幂等 `alter table`。
 - 现有表：`local_device`、`trusted_peers`、`conversations`、`messages`、`transfers`。
-- 旧运行数据迁移：`backend/internal/config/migration.go`，迁移配置、身份文件与数据库文件。
+- 旧运行数据迁移：`backend/internal/config/migration.go`，迁移配置、身份文件与数据库文件；旧目录与旧数据库名只作为迁移来源。
 
 ## 变更规则
 

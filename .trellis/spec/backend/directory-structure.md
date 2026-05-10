@@ -4,7 +4,7 @@
 
 - `backend/main.go`：Wails 桌面入口。
 - `backend/app.go`：暴露给前端的桌面应用方法。
-- `backend/cmd/message-share-agent/`：无窗口 agent 与 loopback Web UI 入口。
+- `backend/cmd/shareme-agent/`：无窗口 agent 与 loopback Web UI 入口。
 - `backend/wails.json`：Wails 前端构建、资源路径与绑定输出配置。
 
 ## 核心包边界

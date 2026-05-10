@@ -7,7 +7,7 @@
 ## 当前基线
 
 - 架构形态：单仓库桌面应用后端，正式入口为 Wails runtime，兼容入口为 headless localhost agent。
-- 运行模块：`backend/main.go`、`backend/app.go`、`backend/internal/**`、`backend/cmd/message-share-agent`。
+- 运行模块：`backend/main.go`、`backend/app.go`、`backend/internal/**`、`backend/cmd/shareme-agent`。
 - 技术栈：Go 1.25、Wails v2.12、SQLite（`modernc.org/sqlite`）、标准库 HTTP、局域网发现与文件传输模块。
 - 规范来源：以仓库内已落地代码、配置、测试和迁移脚本为准
 

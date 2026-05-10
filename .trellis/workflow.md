@@ -64,10 +64,11 @@ Get-Content .\.trellis\spec\guides\index.md
 2. **遵循规范**：编码前先读 `.trellis/spec/`
 3. **规格先行**：行为变更先判断是否进入 OpenSpec
 4. **计划后编码**：方案确认后显式执行 `superpowers:writing-plans`
-5. **增量推进**：一次只推进一个任务
-6. **及时记录**：完成后立刻写入 session / journal
-7. **控制规模**：单个 journal 文件不超过 `2000` 行
-8. **技能泛化**：修改 `SKILL.md` 时保持可迁移，不写当前任务私货
+5. **计划活文档**：`docs/superpowers/plans/*.md` 一旦进入执行期，必须同步回写勾选状态、验证结果、review 结论和阻塞信息
+6. **增量推进**：一次只推进一个任务
+7. **及时记录**：完成后立刻写入 session / journal
+8. **控制规模**：单个 journal 文件不超过 `2000` 行
+9. **技能泛化**：修改 `SKILL.md` 时保持可迁移，不写当前任务私货
 
 ### 职责边界
 
@@ -144,6 +145,7 @@ python .\.trellis\scripts\task.py create "<title>" --slug <task-name>
 
 4. 使用 superpowers:writing-plans
    --> 输出 docs/superpowers/plans/YYYY-MM-DD-<slug>.md
+   --> 计划进入执行期后视为活文档，步骤必须使用 checkbox 追踪
 
 5. 回写 OpenSpec tasks
    --> 只保留高层里程碑，不再维护第二套细粒度状态
@@ -153,12 +155,15 @@ python .\.trellis\scripts\task.py create "<title>" --slug <task-name>
 
 7. 执行实现
    --> 使用 subagent-driven-development 或 executing-plans
+   --> 每个步骤完成并通过对应验证后，及时更新计划 checkbox 与当前执行状态
 
 8. 审阅与门禁
    --> L1 / L2 均需完成测试、lint、review
    --> L2 额外要求多 Agent 审阅通过
+   --> 将最新验证 / review 结论同步回写到计划与 OpenSpec tasks
 
 9. 完成后归档
+   --> 归档前确认计划、Trellis、OpenSpec 的状态一致
    --> openspec archive <slug>
 ```
 

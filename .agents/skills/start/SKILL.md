@@ -298,6 +298,12 @@ python .\.trellis\scripts\task.py add-context $TASK_DIR check "openspec/changes/
 python .\.trellis\scripts\task.py add-context $TASK_DIR check "docs/superpowers/plans/YYYY-MM-DD-<slug>.md" "Check implementation against approved plan"
 ```
 
+If `docs/superpowers/plans/*.md` is part of the task context, treat that plan as an execution-time working document:
+
+- keep its checkboxes aligned with actual implementation progress
+- update current status, validation notes, and review conclusions as the work advances
+- do not leave the plan stale once the work starts moving
+
 **Step 7: Activate Task** `[AI]`
 
 ```powershell

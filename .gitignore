@@ -2,12 +2,14 @@
 .worktrees/
 .serena/
 .superpowers/
+.rtk/
 
 # 本地缓存与临时输出
 .cache/
 .tmp/
 output/
 backend/.cache/
+backend/.gocache/
 coverage/
 
 # 桌面构建产物与本地临时二进制

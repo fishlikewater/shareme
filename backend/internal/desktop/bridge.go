@@ -87,12 +87,19 @@ func (b *Bridge) SendText(ctx context.Context, peerDeviceID string, body string)
 }
 
 func (b *Bridge) SendFile(ctx context.Context, peerDeviceID string) (app.TransferSnapshot, error) {
-	service, err := b.service()
+	path, err := b.openFilePath(ctx)
 	if err != nil {
 		return app.TransferSnapshot{}, err
 	}
+	return b.SendFilePath(ctx, peerDeviceID, path)
+}
 
-	path, err := b.openFilePath(ctx)
+func (b *Bridge) SendFilePath(ctx context.Context, peerDeviceID string, path string) (app.TransferSnapshot, error) {
+	if strings.TrimSpace(path) == "" {
+		return app.TransferSnapshot{}, localfile.ErrPickerCancelled
+	}
+
+	service, err := b.service()
 	if err != nil {
 		return app.TransferSnapshot{}, err
 	}

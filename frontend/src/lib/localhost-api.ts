@@ -38,11 +38,11 @@ export function createLocalhostApiClient(dependencies: LocalhostApiDependencies 
         method: "POST",
         body: JSON.stringify({ body }),
       }),
-    async sendFile(peerDeviceId) {
-      const file = await pickFile();
+    async sendFile(peerDeviceId, file) {
+      const selectedFile = file ?? (await pickFile());
       const form = new FormData();
-      form.set("fileSize", String(file.size));
-      form.set("file", file, file.name);
+      form.set("fileSize", String(selectedFile.size));
+      form.set("file", selectedFile, selectedFile.name);
       return requestForm<TransferSnapshot>(
         fetchFn,
         origin,

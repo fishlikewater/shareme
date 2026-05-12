@@ -20,7 +20,8 @@ export interface LocalApi {
   startPairing: (peerDeviceId: string) => Promise<PairingSnapshot>;
   confirmPairing: (pairingId: string) => Promise<PairingSnapshot>;
   sendText: (peerDeviceId: string, body: string) => Promise<MessageSnapshot>;
-  sendFile: (peerDeviceId: string) => Promise<TransferSnapshot>;
+  sendFile: (peerDeviceId: string, file?: File) => Promise<TransferSnapshot>;
+  sendFilePath?: (peerDeviceId: string, path: string) => Promise<TransferSnapshot>;
   pickLocalFile: () => Promise<LocalFileSnapshot>;
   sendAcceleratedFile: (peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>;
   listMessageHistory: (conversationId: string, beforeCursor?: string) => Promise<MessageHistoryPage>;

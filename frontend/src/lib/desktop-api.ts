@@ -17,6 +17,7 @@ export type DesktopCommands = {
   ConfirmPairing: (pairingId: string) => Promise<PairingSnapshot>;
   SendText: (peerDeviceId: string, body: string) => Promise<MessageSnapshot>;
   SendFile: (peerDeviceId: string) => Promise<TransferSnapshot>;
+  SendFilePath?: (peerDeviceId: string, path: string) => Promise<TransferSnapshot>;
   PickLocalFile: () => Promise<LocalFileSnapshot>;
   SendAcceleratedFile: (peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>;
   ListMessageHistory: (conversationId: string, beforeCursor?: string) => Promise<MessageHistoryPage>;
@@ -56,6 +57,9 @@ export function createDesktopApiClient(dependencies: DesktopApiDependencies = {}
     confirmPairing: (pairingId) => commands.ConfirmPairing(pairingId),
     sendText: (peerDeviceId, body) => commands.SendText(peerDeviceId, body),
     sendFile: (peerDeviceId) => commands.SendFile(peerDeviceId),
+    sendFilePath: commands.SendFilePath
+      ? (peerDeviceId, path) => commands.SendFilePath!(peerDeviceId, path)
+      : undefined,
     pickLocalFile: () => commands.PickLocalFile(),
     sendAcceleratedFile: (peerDeviceId, localFileId) => commands.SendAcceleratedFile(peerDeviceId, localFileId),
     listMessageHistory: (conversationId, beforeCursor) => commands.ListMessageHistory(conversationId, beforeCursor),

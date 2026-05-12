@@ -1,4 +1,12 @@
-import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 
 import { FileMessageCard } from "./FileMessageCard";
 import type { ConversationMessage, LocalFileSnapshot, PeerSummary } from "../lib/types";
@@ -16,7 +24,7 @@ type ChatPaneProps = {
   historyLoading: boolean;
   historyError?: string;
   onSendText: (body: string) => Promise<void>;
-  onSendFile: () => Promise<void>;
+  onSendFile: (file?: File) => Promise<void>;
   onPickLocalFile: () => Promise<void>;
   onSendAcceleratedFile: () => Promise<void>;
   onLoadOlderMessages: () => Promise<void>;
@@ -41,12 +49,13 @@ export function ChatPane({
   onLoadOlderMessages,
 }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string>();
   const messageListRef = useRef<HTMLDivElement>(null);
   const prependAnchorHeightRef = useRef<number | null>(null);
   const previousConversationIDRef = useRef<string | undefined>(undefined);
+  const copyTipTimerRef = useRef<number>();
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function sendDraft() {
     const body = draft.trim();
     if (!body) {
       return;
@@ -56,11 +65,61 @@ export function ChatPane({
     setDraft("");
   }
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await sendDraft();
+  }
+
+  async function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    await sendDraft();
+  }
+
   async function handlePickFile() {
     if (sendingFile || pickingLocalFile || sendingAcceleratedFile) {
       return;
     }
     await onSendFile();
+  }
+
+  async function handleDropFile(event: DragEvent<HTMLTextAreaElement>) {
+    if (hasWailsFileDropRuntime()) {
+      return;
+    }
+
+    const files = event.dataTransfer.files;
+    const file = typeof files.item === "function" ? files.item(0) : files[0];
+    if (!file) {
+      return;
+    }
+    event.preventDefault();
+    if (sendingFile || pickingLocalFile || sendingAcceleratedFile) {
+      return;
+    }
+    await onSendFile(file);
+  }
+
+  function handleDragOverFile(event: DragEvent<HTMLTextAreaElement>) {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  async function handleCopyText(messageId: string, body: string) {
+    await writeClipboardText(body);
+    setCopiedMessageId(messageId);
+    if (copyTipTimerRef.current !== undefined) {
+      window.clearTimeout(copyTipTimerRef.current);
+    }
+    copyTipTimerRef.current = window.setTimeout(() => {
+      setCopiedMessageId(undefined);
+      copyTipTimerRef.current = undefined;
+    }, 1800);
   }
 
   async function handlePickLocalFile() {
@@ -110,6 +169,14 @@ export function ChatPane({
       container.scrollTop = container.scrollHeight;
     }
   }, [conversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (copyTipTimerRef.current !== undefined) {
+        window.clearTimeout(copyTipTimerRef.current);
+      }
+    };
+  }, []);
 
   const canSend = Boolean(peer?.trusted && peer.reachable);
   const acceleratedBusy = pickingLocalFile || sendingAcceleratedFile;
@@ -283,7 +350,36 @@ export function ChatPane({
                 >
                   <div className="ms-message-card__top">
                     <strong className="ms-message-kind">信息</strong>
-                    <span className="ms-message-time">{formatMessageTime(message.createdAt)}</span>
+                    <div className="ms-message-card__actions">
+                      <span className="ms-message-time">{formatMessageTime(message.createdAt)}</span>
+                      <button
+                        aria-label="复制消息文本"
+                        className="ms-icon-button ms-message-copy-button"
+                        onClick={() => {
+                          void handleCopyText(message.messageId, message.body);
+                        }}
+                        title="复制消息文本"
+                        type="button"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          className="ms-copy-icon"
+                          fill="none"
+                          focusable="false"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          viewBox="0 0 16 16"
+                        >
+                          <rect height="8" rx="1.5" stroke="currentColor" strokeWidth="1.4" width="8" x="3" y="5" />
+                          <rect height="8" rx="1.5" stroke="currentColor" strokeWidth="1.4" width="8" x="6" y="2" />
+                        </svg>
+                      </button>
+                      {copiedMessageId === message.messageId ? (
+                        <span aria-label="复制结果" className="ms-message-copy-tip" role="status">
+                          已复制
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="ms-message-body">{message.body}</div>
                   <div className="ms-message-meta">{formatMessageState(message.status)}</div>
@@ -298,6 +394,13 @@ export function ChatPane({
               className="ms-textarea"
               disabled={sendingText}
               onChange={(event) => setDraft(event.target.value)}
+              onDragOver={handleDragOverFile}
+              onDrop={(event) => {
+                void handleDropFile(event);
+              }}
+              onKeyDown={(event) => {
+                void handleTextareaKeyDown(event);
+              }}
               placeholder="输入一条消息，或直接发送文件"
               rows={4}
               value={draft}
@@ -372,4 +475,28 @@ function formatFileSize(fileSize: number): string {
     return `${Math.max(1, Math.round(fileSize / 1024))} KB`;
   }
   return `${fileSize} B`;
+}
+
+type DesktopClipboardRuntime = {
+  ClipboardSetText?: (text: string) => Promise<void>;
+  OnFileDrop?: unknown;
+};
+
+function hasWailsFileDropRuntime(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return typeof (window as Window & { runtime?: DesktopClipboardRuntime }).runtime?.OnFileDrop === "function";
+}
+
+async function writeClipboardText(body: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(body);
+    return;
+  }
+
+  const runtime = (window as Window & { runtime?: DesktopClipboardRuntime }).runtime;
+  if (runtime?.ClipboardSetText) {
+    await runtime.ClipboardSetText(body);
+  }
 }

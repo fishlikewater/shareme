@@ -135,6 +135,34 @@ describe("createLocalhostApiClient", () => {
     expect([...((form as FormData).keys())]).toEqual(["fileSize", "file"]);
   });
 
+  it("普通文件发送支持直接传入拖拽文件并跳过浏览器选文件", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ transferId: "tx-1", fileName: "drop.txt" }),
+      text: async () => "",
+    });
+    const droppedFile = new File(["drop-body"], "drop.txt", { type: "text/plain" });
+    const pickFile = vi.fn();
+    const { createLocalhostApiClient } = await import("./localhost-api");
+    const api = createLocalhostApiClient({
+      origin: "http://127.0.0.1:52350",
+      fetchFn,
+      createEventSource: vi.fn(),
+      pickFile,
+    });
+
+    await api.sendFile("peer-1", droppedFile);
+
+    expect(pickFile).not.toHaveBeenCalled();
+    const form = fetchFn.mock.calls[0]?.[1]?.body;
+    expect(form).toBeInstanceOf(FormData);
+    const uploadedFile = (form as FormData).get("file");
+    expect(uploadedFile).toBeInstanceOf(File);
+    expect((uploadedFile as File).name).toBe(droppedFile.name);
+    expect((uploadedFile as File).size).toBe(droppedFile.size);
+    expect((form as FormData).get("fileSize")).toBe(String(droppedFile.size));
+  });
+
   it("SSE 基于 eventSeq 去重，并在 reconnect 后从最新序号续接", async () => {
     const fetchFn = vi.fn();
     const sources: MockEventSource[] = [];

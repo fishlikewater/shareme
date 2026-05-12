@@ -40,6 +40,11 @@ type ConversationHistoryState = {
   error?: string;
 };
 
+type WailsDropRuntime = {
+  OnFileDrop?: (callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean) => void;
+  OnFileDropOff?: () => void;
+};
+
 const initialBusyState: BusyState = {
   startingPairing: false,
   confirmingPairing: false,
@@ -227,7 +232,7 @@ export default function AppShell({ api }: AppProps) {
     }
   }
 
-  async function handleSendFile() {
+  async function handleSendFile(file?: File) {
     if (!selectedPeer) {
       return;
     }
@@ -235,7 +240,7 @@ export default function AppShell({ api }: AppProps) {
     setCommandError(undefined);
     setBusyState((current) => ({ ...current, sendingFile: true }));
     try {
-      const transfer = await resolvedApi.sendFile(selectedPeer.deviceId);
+      const transfer = await resolvedApi.sendFile(selectedPeer.deviceId, file);
       startTransition(() => {
         setSnapshot((current) =>
           current ? upsertOutgoingFile(current, selectedPeer.deviceId, transfer) : current,
@@ -247,6 +252,58 @@ export default function AppShell({ api }: AppProps) {
       setBusyState((current) => ({ ...current, sendingFile: false }));
     }
   }
+
+  async function handleSendFilePath(path: string) {
+    if (
+      !selectedPeer ||
+      !resolvedApi.sendFilePath ||
+      busyState.sendingFile ||
+      busyState.pickingLocalFile ||
+      busyState.sendingAcceleratedFile
+    ) {
+      return;
+    }
+
+    setCommandError(undefined);
+    setBusyState((current) => ({ ...current, sendingFile: true }));
+    try {
+      const transfer = await resolvedApi.sendFilePath(selectedPeer.deviceId, path);
+      startTransition(() => {
+        setSnapshot((current) =>
+          current ? upsertOutgoingFile(current, selectedPeer.deviceId, transfer) : current,
+        );
+      });
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : "send dropped file failed");
+    } finally {
+      setBusyState((current) => ({ ...current, sendingFile: false }));
+    }
+  }
+
+  useEffect(() => {
+    const runtime = readWailsDropRuntime();
+    if (!runtime?.OnFileDrop || !resolvedApi.sendFilePath) {
+      return;
+    }
+
+    runtime.OnFileDrop((_x, _y, paths) => {
+      const path = paths[0];
+      if (!path) {
+        return;
+      }
+      void handleSendFilePath(path);
+    }, true);
+
+    return () => {
+      runtime.OnFileDropOff?.();
+    };
+  }, [
+    busyState.pickingLocalFile,
+    busyState.sendingAcceleratedFile,
+    busyState.sendingFile,
+    resolvedApi,
+    selectedPeer,
+  ]);
 
   async function handlePickLocalFile() {
     if (!selectedPeer) {
@@ -815,6 +872,13 @@ function upsertOutgoingPickedFile(
     status: transfer.state === "done" ? "sent" : transfer.state,
     createdAt: transfer.createdAt,
   });
+}
+
+function readWailsDropRuntime(): WailsDropRuntime | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  return (window as Window & { runtime?: WailsDropRuntime }).runtime;
 }
 
 function parsePeerDeviceIdFromConversation(conversationId: string): string | undefined {

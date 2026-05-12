@@ -127,6 +127,13 @@ func (a *DesktopApp) SendFile(peerDeviceID string) (appruntime.TransferSnapshot,
 	return a.bridge.SendFile(a.commandContext(), peerDeviceID)
 }
 
+func (a *DesktopApp) SendFilePath(peerDeviceID string, path string) (appruntime.TransferSnapshot, error) {
+	if err := a.StartupError(); err != nil {
+		return appruntime.TransferSnapshot{}, err
+	}
+	return a.bridge.SendFilePath(a.commandContext(), peerDeviceID, path)
+}
+
 func (a *DesktopApp) PickLocalFile() (appruntime.LocalFileSnapshot, error) {
 	if err := a.StartupError(); err != nil {
 		return appruntime.LocalFileSnapshot{}, err

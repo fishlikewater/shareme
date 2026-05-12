@@ -176,6 +176,43 @@ func TestBridgeSendFileUsesNativeDialogAndStreamsLocalFile(t *testing.T) {
 	}
 }
 
+func TestBridgeSendFilePathStreamsDroppedLocalFileWithoutDialog(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "drop.txt")
+	if err := os.WriteFile(path, []byte("drop"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	bridge := NewBridge(func() RuntimeCommands {
+		return &fakeRuntimeCommands{
+			sendFileFunc: func(_ context.Context, peerDeviceID string, fileName string, fileSize int64, content io.Reader) (app.TransferSnapshot, error) {
+				if peerDeviceID != "peer-1" {
+					t.Fatalf("unexpected peer id: %s", peerDeviceID)
+				}
+				if fileName != "drop.txt" || fileSize != 4 {
+					t.Fatalf("unexpected file metadata: %s %d", fileName, fileSize)
+				}
+				body, err := io.ReadAll(content)
+				if err != nil {
+					t.Fatalf("ReadAll() error = %v", err)
+				}
+				if string(body) != "drop" {
+					t.Fatalf("unexpected body: %q", string(body))
+				}
+				return app.TransferSnapshot{TransferID: "tx-drop-1", FileName: fileName}, nil
+			},
+		}
+	}, fakeDialogs{openFileErr: errors.New("dialog should not open")})
+
+	transfer, err := bridge.SendFilePath(context.Background(), "peer-1", path)
+	if err != nil {
+		t.Fatalf("SendFilePath() error = %v", err)
+	}
+	if transfer.TransferID != "tx-drop-1" {
+		t.Fatalf("unexpected transfer: %#v", transfer)
+	}
+}
+
 func TestBridgePropagatesErrors(t *testing.T) {
 	serviceErr := errors.New("send failed")
 	bridge := NewBridge(func() RuntimeCommands {

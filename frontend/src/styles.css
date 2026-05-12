@@ -369,6 +369,45 @@ button {
   font-weight: 800;
 }
 
+.ms-message-copy-button {
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--ms-muted);
+  transition: color 150ms ease;
+}
+
+.ms-icon-button.ms-message-copy-button:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ms-teal);
+}
+
+.ms-copy-icon {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+.ms-message-copy-tip {
+  position: absolute;
+  right: 0;
+  top: -32px;
+  z-index: 2;
+  white-space: nowrap;
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: #111316;
+  color: #f5f7f8;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+}
+
 .ms-button {
   min-height: 42px;
   border-radius: var(--ms-radius);
@@ -775,6 +814,13 @@ button {
   gap: 10px;
 }
 
+.ms-message-card__actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .ms-message-kind,
 .ms-message-time,
 .ms-message-meta,
@@ -803,6 +849,7 @@ button {
 }
 
 .ms-textarea {
+  --wails-drop-target: drop;
   width: 100%;
   min-height: 116px;
   padding: 12px;
@@ -811,10 +858,16 @@ button {
   background: var(--ms-surface);
   color: var(--ms-text);
   resize: vertical;
+  transition: background 150ms ease, border-color 150ms ease;
 }
 
 .ms-textarea::placeholder {
   color: #8a9995;
+}
+
+.ms-textarea.wails-drop-target-active {
+  border-color: var(--ms-teal);
+  background: #eefaf6;
 }
 
 .ms-status-panel {

@@ -13,8 +13,14 @@ import type {
   TransferSnapshot,
 } from "./lib/types";
 
+const originalRuntime = (window as Window & { runtime?: unknown }).runtime;
+
 afterEach(() => {
   vi.useRealTimers();
+  Object.defineProperty(window, "runtime", {
+    configurable: true,
+    value: originalRuntime,
+  });
 });
 
 class FakeApi implements LocalApi {
@@ -22,7 +28,8 @@ class FakeApi implements LocalApi {
   readonly startedPairings: string[] = [];
   readonly confirmedPairings: string[] = [];
   readonly sentTexts: Array<{ peerDeviceId: string; body: string }> = [];
-  readonly sentFiles: Array<{ peerDeviceId: string }> = [];
+  readonly sentFiles: Array<{ peerDeviceId: string; fileName?: string }> = [];
+  readonly sentFilePaths: Array<{ peerDeviceId: string; path: string }> = [];
   readonly pickedLocalFiles: number[] = [];
   readonly sentAcceleratedFiles: Array<{ peerDeviceId: string; localFileId: string }> = [];
   readonly listedHistory: Array<{ conversationId: string; beforeCursor?: string }> = [];
@@ -68,12 +75,31 @@ class FakeApi implements LocalApi {
     };
   }
 
-  async sendFile(peerDeviceId: string): Promise<TransferSnapshot> {
-    this.sentFiles.push({ peerDeviceId });
+  async sendFile(peerDeviceId: string, file?: File): Promise<TransferSnapshot> {
+    this.sentFiles.push({ peerDeviceId, fileName: file?.name });
     return {
       transferId: "transfer-1",
       messageId: "msg-file-1",
-      fileName: "hello.txt",
+      fileName: file?.name ?? "hello.txt",
+      fileSize: file?.size ?? 5,
+      state: "done",
+      createdAt: "2026-04-10T08:25:00Z",
+      direction: "outgoing",
+      bytesTransferred: 5,
+      progressPercent: 100,
+      rateBytesPerSec: 0,
+      etaSeconds: 0,
+      active: false,
+    };
+  }
+
+  async sendFilePath(peerDeviceId: string, path: string): Promise<TransferSnapshot> {
+    this.sentFilePaths.push({ peerDeviceId, path });
+    const fileName = path.split(/[\\/]/).pop() || "文件";
+    return {
+      transferId: "transfer-path-1",
+      messageId: "msg-file-path-1",
+      fileName,
       fileSize: 5,
       state: "done",
       createdAt: "2026-04-10T08:25:00Z",
@@ -348,6 +374,59 @@ describe("App", () => {
     });
     await waitFor(() => {
       expect(screen.getAllByText("hello.txt").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("消息输入框支持拖拽外部文件发送", async () => {
+    const api = new FakeApi(bootstrapSnapshot);
+    const file = new File(["drop"], "drop.txt", { type: "text/plain" });
+
+    render(<App api={api} />);
+    expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /办公室副机/ }));
+    fireEvent.drop(screen.getByRole("textbox", { name: "消息输入框" }), {
+      dataTransfer: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(api.sentFiles).toContainEqual({ peerDeviceId: "peer-1", fileName: "drop.txt" });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("drop.txt").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("Wails 文件拖拽路径落在输入框时走桌面路径发送", async () => {
+    const api = new FakeApi(bootstrapSnapshot);
+    let onFileDrop: ((x: number, y: number, paths: string[]) => void) | undefined;
+    const runtime = {
+      OnFileDrop: vi.fn((callback: (x: number, y: number, paths: string[]) => void) => {
+        onFileDrop = callback;
+      }),
+      OnFileDropOff: vi.fn(),
+    };
+    Object.defineProperty(window, "runtime", {
+      configurable: true,
+      value: runtime,
+    });
+
+    render(<App api={api} />);
+    expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /办公室副机/ }));
+
+    await waitFor(() => {
+      expect(runtime.OnFileDrop).toHaveBeenCalledWith(expect.any(Function), true);
+    });
+    act(() => {
+      onFileDrop?.(10, 10, ["C:\\tmp\\drop.txt"]);
+    });
+
+    await waitFor(() => {
+      expect(api.sentFilePaths).toEqual([{ peerDeviceId: "peer-1", path: "C:\\tmp\\drop.txt" }]);
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("drop.txt").length).toBeGreaterThan(0);
     });
   });
 

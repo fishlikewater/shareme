@@ -35,6 +35,20 @@ describe("createDesktopApiClient", () => {
         active: true,
         createdAt: new Date().toISOString(),
       }),
+      SendFilePath: vi.fn().mockResolvedValue({
+        transferId: "tx-path-1",
+        messageId: "msg-path-1",
+        fileName: "drop.txt",
+        fileSize: 5,
+        state: "sending",
+        direction: "outgoing",
+        bytesTransferred: 0,
+        progressPercent: 0,
+        rateBytesPerSec: 0,
+        etaSeconds: null,
+        active: true,
+        createdAt: new Date().toISOString(),
+      }),
       PickLocalFile: vi.fn().mockResolvedValue({
         localFileId: "lf-1",
         displayName: "demo.txt",
@@ -70,6 +84,8 @@ describe("createDesktopApiClient", () => {
 
     await api.sendFile("peer-1");
     expect(commands.SendFile).toHaveBeenCalledWith("peer-1");
+    await api.sendFilePath?.("peer-1", "C:\\tmp\\drop.txt");
+    expect(commands.SendFilePath).toHaveBeenCalledWith("peer-1", "C:\\tmp\\drop.txt");
 
     const received: AgentEvent[] = [];
     const subscription = api.subscribeEvents({

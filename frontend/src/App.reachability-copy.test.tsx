@@ -22,6 +22,7 @@ function createApi(snapshot: BootstrapSnapshot): LocalApi {
     pickLocalFile: vi.fn<() => Promise<LocalFileSnapshot>>(),
     sendAcceleratedFile: vi.fn<(peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>>(),
     listMessageHistory: vi.fn(),
+    removeMessage: vi.fn<(messageId: string) => Promise<void>>().mockResolvedValue(undefined),
     subscribeEvents: vi.fn(
       (_options: { lastEventSeq?: number; onEvent: (event: AgentEvent) => void }) => ({
         close: vi.fn(),

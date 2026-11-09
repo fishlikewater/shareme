@@ -28,6 +28,7 @@ type ChatPaneProps = {
   onPickLocalFile: () => Promise<void>;
   onSendAcceleratedFile: () => Promise<void>;
   onLoadOlderMessages: () => Promise<void>;
+  onDeleteMessage?: (messageId: string) => Promise<void>;
 };
 
 export function ChatPane({
@@ -47,6 +48,7 @@ export function ChatPane({
   onPickLocalFile,
   onSendAcceleratedFile,
   onLoadOlderMessages,
+    onDeleteMessage,
 }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
   const [copiedMessageId, setCopiedMessageId] = useState<string>();
@@ -338,7 +340,7 @@ export function ChatPane({
 
             {messages.map((message) => {
               if (message.kind === "file") {
-                return <FileMessageCard key={message.messageId} message={message} transfer={message.transfer} />;
+                return <FileMessageCard key={message.messageId} message={message} transfer={message.transfer} onDelete={onDeleteMessage} />;
               }
 
               return (
@@ -374,6 +376,30 @@ export function ChatPane({
                           <rect height="8" rx="1.5" stroke="currentColor" strokeWidth="1.4" width="8" x="6" y="2" />
                         </svg>
                       </button>
+                      {onDeleteMessage ? (
+                        <button
+                          aria-label="删除消息"
+                          className="ms-icon-button ms-message-delete-button"
+                          onClick={() => { void onDeleteMessage(message.messageId); }}
+                          title="删除消息"
+                          type="button"
+                        >
+                          <svg
+                            aria-hidden="true"
+                            fill="none"
+                            focusable="false"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                          >
+                            <path d="M2 4h12" stroke="currentColor" strokeWidth="1.4" />
+                            <path d="M5.333 4V2.667a1.333 1.333 0 0 1 1.334-1.334h2.666a1.333 1.333 0 0 1 1.334 1.334V4" stroke="currentColor" strokeWidth="1.4" />
+                            <path d="M3.333 4v9.333a1.333 1.333 0 0 0 1.334 1.334h6.666a1.333 1.333 0 0 0 1.334-1.334V4" stroke="currentColor" strokeWidth="1.4" />
+                          </svg>
+                        </button>
+                      ) : null}
                       {copiedMessageId === message.messageId ? (
                         <span aria-label="复制结果" className="ms-message-copy-tip" role="status">
                           已复制

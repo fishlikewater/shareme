@@ -61,6 +61,10 @@ func (fakeCommands) ListMessageHistory(context.Context, string, string) (apprunt
 	return appruntime.MessageHistoryPageSnapshot{}, nil
 }
 
+func (fakeCommands) RemoveMessage(context.Context, string) error {
+	return nil
+}
+
 func TestBootstrapRejectsNonLoopback(t *testing.T) {
 	service := NewService(func() RuntimeCommands { return fakeCommands{} }, api.NewEventBus())
 	server := NewServer(ServiceDeps{Service: service})
@@ -123,6 +127,7 @@ type routingCommands struct {
 		ConversationID string
 		BeforeCursor   string
 	}
+	removeMessageCalls []string
 }
 
 func (c *routingCommands) Bootstrap() (appruntime.BootstrapSnapshot, error) {
@@ -176,6 +181,11 @@ func (c *routingCommands) ListMessageHistory(_ context.Context, conversationID s
 		HasMore:    false,
 		NextCursor: "",
 	}, nil
+}
+
+func (c *routingCommands) RemoveMessage(_ context.Context, messageID string) error {
+	c.removeMessageCalls = append(c.removeMessageCalls, messageID)
+	return nil
 }
 
 func TestCommandRoutesMapToRuntimeService(t *testing.T) {

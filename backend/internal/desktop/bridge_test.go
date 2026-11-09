@@ -21,6 +21,7 @@ type fakeRuntimeCommands struct {
 	registerLocalFileFunc  func(context.Context, string) (app.LocalFileSnapshot, error)
 	sendAcceleratedFunc    func(context.Context, string, string) (app.TransferSnapshot, error)
 	listMessageHistoryFunc func(context.Context, string, string) (app.MessageHistoryPageSnapshot, error)
+	removeMessageFunc      func(context.Context, string) error
 }
 
 func (f *fakeRuntimeCommands) Bootstrap() (app.BootstrapSnapshot, error) {
@@ -53,6 +54,13 @@ func (f *fakeRuntimeCommands) SendAcceleratedFile(ctx context.Context, peerDevic
 
 func (f *fakeRuntimeCommands) ListMessageHistory(ctx context.Context, conversationID string, beforeCursor string) (app.MessageHistoryPageSnapshot, error) {
 	return f.listMessageHistoryFunc(ctx, conversationID, beforeCursor)
+}
+
+func (f *fakeRuntimeCommands) RemoveMessage(ctx context.Context, messageID string) error {
+	if f.removeMessageFunc == nil {
+		return nil
+	}
+	return f.removeMessageFunc(ctx, messageID)
 }
 
 type fakeDialogs struct {

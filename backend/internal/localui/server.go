@@ -148,6 +148,8 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		s.handlePickLocalFile(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/peers/"):
 		s.handlePeerRoutes(w, r)
+	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/messages/"):
+		s.handleDeleteMessage(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/conversations/") && strings.HasSuffix(r.URL.Path, "/messages"):
 		s.handleListMessageHistory(w, r)
 	default:
@@ -511,4 +513,18 @@ func extractPathValue(requestPath string, prefix string, suffix string) (string,
 		return "", false
 	}
 	return value, true
+}
+
+func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
+	messageID := strings.TrimPrefix(r.URL.Path, "/api/messages/")
+	messageID = strings.Trim(messageID, "/")
+	if messageID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.service.RemoveMessage(r.Context(), messageID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

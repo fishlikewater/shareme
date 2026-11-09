@@ -148,6 +148,13 @@ func (a *DesktopApp) SendAcceleratedFile(peerDeviceID string, localFileID string
 	return a.bridge.SendAcceleratedFile(a.commandContext(), peerDeviceID, localFileID)
 }
 
+func (a *DesktopApp) RemoveMessage(messageID string) error {
+	if err := a.StartupError(); err != nil {
+		return err
+	}
+	return a.bridge.RemoveMessage(a.commandContext(), messageID)
+}
+
 func (a *DesktopApp) ListMessageHistory(conversationID string, beforeCursor string) (appruntime.MessageHistoryPageSnapshot, error) {
 	if err := a.StartupError(); err != nil {
 		return appruntime.MessageHistoryPageSnapshot{}, err

@@ -57,6 +57,8 @@ export type MessageSnapshot = {
   body: string;
   status: MessageStatus;
   createdAt: string;
+  filePath?: string;
+  fileExists?: boolean;
 };
 
 export type TransferSnapshot = {

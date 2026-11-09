@@ -56,6 +56,7 @@ describe("createDesktopApiClient", () => {
         acceleratedEligible: false,
       }),
       SendAcceleratedFile: vi.fn().mockResolvedValue({ transferId: "tx-2" }),
+      RemoveMessage: vi.fn().mockResolvedValue(undefined),
       ListMessageHistory: vi.fn().mockResolvedValue({
         conversationId: "conv-1",
         messages: [],

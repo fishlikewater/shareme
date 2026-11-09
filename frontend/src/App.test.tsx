@@ -33,6 +33,7 @@ class FakeApi implements LocalApi {
   readonly pickedLocalFiles: number[] = [];
   readonly sentAcceleratedFiles: Array<{ peerDeviceId: string; localFileId: string }> = [];
   readonly listedHistory: Array<{ conversationId: string; beforeCursor?: string }> = [];
+  readonly removedMessages: string[] = [];
 
   constructor(private readonly snapshot: BootstrapSnapshot) {}
 
@@ -148,6 +149,10 @@ class FakeApi implements LocalApi {
       hasMore: false,
       nextCursor: "",
     };
+  }
+
+  async removeMessage(messageId: string): Promise<void> {
+    this.removedMessages.push(messageId);
   }
 
   subscribeEvents(options: { lastEventSeq?: number; onEvent: (event: AgentEvent) => void }) {
@@ -497,6 +502,7 @@ describe("App", () => {
       pickLocalFile: vi.fn(),
       sendAcceleratedFile: vi.fn(),
       listMessageHistory: vi.fn(),
+      removeMessage: vi.fn().mockResolvedValue(undefined),
       subscribeEvents: vi.fn(() => ({
         close: vi.fn(),
         reconnect: vi.fn(),
@@ -782,5 +788,24 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开设备 Dock" }));
 
     expect(screen.getByRole("navigation", { name: "设备 Dock" })).not.toHaveClass("is-collapsed");
+  });
+
+  it("删除历史消息后会调用接口并立即从列表移除", async () => {
+    const api = new FakeApi(bootstrapSnapshot);
+
+    render(<App api={api} />);
+    expect((await screen.findAllByText("我的电脑")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /办公室副机/ }));
+    expect(screen.getAllByText("昨晚的文件已经收到").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "删除消息" }));
+
+    await waitFor(() => {
+      expect(api.removedMessages).toEqual(["msg-in-1"]);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("昨晚的文件已经收到")).not.toBeInTheDocument();
+    });
   });
 });

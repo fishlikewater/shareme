@@ -25,6 +25,7 @@ export interface LocalApi {
   pickLocalFile: () => Promise<LocalFileSnapshot>;
   sendAcceleratedFile: (peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>;
   listMessageHistory: (conversationId: string, beforeCursor?: string) => Promise<MessageHistoryPage>;
+  removeMessage: (messageId: string) => Promise<void>;
   subscribeEvents: (options: {
     lastEventSeq?: number;
     onEvent: (event: AgentEvent) => void;

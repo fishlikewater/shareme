@@ -51,6 +51,7 @@ describe("App refresh", () => {
       pickLocalFile: vi.fn(),
       sendAcceleratedFile: vi.fn(),
       listMessageHistory: vi.fn(),
+      removeMessage: vi.fn().mockResolvedValue(undefined),
       subscribeEvents: vi.fn(() => ({
         close: vi.fn(),
         reconnect: vi.fn(),
@@ -113,6 +114,7 @@ describe("App refresh", () => {
       pickLocalFile: vi.fn(),
       sendAcceleratedFile: vi.fn(),
       listMessageHistory: vi.fn(),
+      removeMessage: vi.fn().mockResolvedValue(undefined),
       subscribeEvents: vi.fn((options) => {
         onEvent = options.onEvent;
         return {
@@ -204,6 +206,7 @@ describe("App refresh", () => {
       pickLocalFile: vi.fn(),
       sendAcceleratedFile: vi.fn(),
       listMessageHistory: vi.fn(),
+      removeMessage: vi.fn().mockResolvedValue(undefined),
       subscribeEvents,
     };
 

@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationMessage, TransferSnapshot } from "../lib/types";
 import { FileMessageCard } from "./FileMessageCard";
@@ -170,5 +170,21 @@ describe("FileMessageCard", () => {
     );
 
     expect(screen.getByText("已回退普通传输")).toBeInTheDocument();
+  });
+
+  it("真实文件缺失时展示清除按钮并回调删除", () => {
+    const onDelete = vi.fn();
+
+    render(
+      <FileMessageCard
+        message={{ ...message, fileExists: false, filePath: "C:\\temp\\report.docx" }}
+        transfer={{ ...transfer, state: "done" }}
+        onDelete={onDelete}
+      />,
+    );
+
+    expect(screen.getByText("文件已移除")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "清除已移除文件的消息" }));
+    expect(onDelete).toHaveBeenCalledWith(message.messageId);
   });
 });

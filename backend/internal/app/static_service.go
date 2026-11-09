@@ -42,6 +42,10 @@ func (s StaticService) SendAcceleratedFile(_ context.Context, _ string, _ string
 	return TransferSnapshot{}, fmt.Errorf("accelerated file transfer not supported by static service")
 }
 
+func (s StaticService) RemoveMessage(_ context.Context, _ string) error {
+	return fmt.Errorf("message history not available")
+}
+
 func (s StaticService) ListMessageHistory(_ context.Context, conversationID string, _ string) (MessageHistoryPageSnapshot, error) {
 	return MessageHistoryPageSnapshot{
 		ConversationID: conversationID,

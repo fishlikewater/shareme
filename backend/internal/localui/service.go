@@ -18,6 +18,7 @@ type RuntimeCommands interface {
 	PickLocalFile(ctx context.Context) (appruntime.LocalFileSnapshot, error)
 	SendAcceleratedFile(ctx context.Context, peerDeviceID string, localFileID string) (appruntime.TransferSnapshot, error)
 	ListMessageHistory(ctx context.Context, conversationID string, beforeCursor string) (appruntime.MessageHistoryPageSnapshot, error)
+	RemoveMessage(ctx context.Context, messageID string) error
 }
 
 type Service struct {
@@ -89,6 +90,14 @@ func (s *Service) SendAcceleratedFile(ctx context.Context, peerDeviceID string, 
 		return appruntime.TransferSnapshot{}, err
 	}
 	return runtime.SendAcceleratedFile(ctx, peerDeviceID, localFileID)
+}
+
+func (s *Service) RemoveMessage(ctx context.Context, messageID string) error {
+	runtime, err := s.runtime()
+	if err != nil {
+		return err
+	}
+	return runtime.RemoveMessage(ctx, messageID)
 }
 
 func (s *Service) ListMessageHistory(ctx context.Context, conversationID string, beforeCursor string) (appruntime.MessageHistoryPageSnapshot, error) {

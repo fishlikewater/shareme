@@ -205,3 +205,7 @@ func (s *desktopBridgeRuntimeStub) SendAcceleratedFile(context.Context, string, 
 func (s *desktopBridgeRuntimeStub) ListMessageHistory(context.Context, string, string) (appruntime.MessageHistoryPageSnapshot, error) {
 	return appruntime.MessageHistoryPageSnapshot{}, nil
 }
+
+func (s *desktopBridgeRuntimeStub) RemoveMessage(context.Context, string) error {
+	return nil
+}

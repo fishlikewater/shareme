@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"path/filepath"
@@ -462,5 +463,61 @@ func TestSaveMessageWithTransferRollsBackWhenTransferInsertFails(t *testing.T) {
 	}
 	if len(messages) != 0 {
 		t.Fatalf("expected message insert to roll back with transfer failure, got %#v", messages)
+	}
+}
+
+func TestRemoveMessageDeletesMessageAndAssociatedTransfer(t *testing.T) {
+	db, err := Open("file::memory:?cache=shared")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer db.Close()
+
+	conversation, err := db.EnsureConversation("peer-remove")
+	if err != nil {
+		t.Fatalf("ensure conversation: %v", err)
+	}
+
+	message := domain.Message{
+		MessageID:      "msg-remove",
+		ConversationID: conversation.ConversationID,
+		Direction:      "incoming",
+		Kind:           "file",
+		Body:           "photo.png",
+		Status:         "sent",
+		CreatedAt:      time.Date(2026, 4, 10, 8, 30, 0, 0, time.UTC),
+	}
+	transfer := domain.Transfer{
+		TransferID:       "tx-remove",
+		MessageID:        message.MessageID,
+		FileName:         "photo.png",
+		FileSize:         7,
+		State:            "done",
+		Direction:        "incoming",
+		BytesTransferred: 7,
+		CreatedAt:        message.CreatedAt,
+	}
+	if err := db.SaveMessageWithTransfer(message, transfer); err != nil {
+		t.Fatalf("save message with transfer: %v", err)
+	}
+
+	if err := db.RemoveMessage(context.Background(), message.MessageID); err != nil {
+		t.Fatalf("RemoveMessage() error = %v", err)
+	}
+
+	messages, err := db.ListMessages(conversation.ConversationID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected messages to be deleted, got %#v", messages)
+	}
+
+	transfers, err := db.ListTransfers()
+	if err != nil {
+		t.Fatalf("list transfers: %v", err)
+	}
+	if len(transfers) != 0 {
+		t.Fatalf("expected transfers to be deleted with message, got %#v", transfers)
 	}
 }

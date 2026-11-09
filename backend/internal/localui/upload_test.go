@@ -45,6 +45,10 @@ func (uploadCommands) ListMessageHistory(context.Context, string, string) (appru
 	return appruntime.MessageHistoryPageSnapshot{}, nil
 }
 
+func (uploadCommands) RemoveMessage(context.Context, string) error {
+	return nil
+}
+
 func (uploadCommands) SendFile(_ context.Context, peerDeviceID string, fileName string, fileSize int64, content io.Reader) (appruntime.TransferSnapshot, error) {
 	body, err := io.ReadAll(content)
 	if err != nil {

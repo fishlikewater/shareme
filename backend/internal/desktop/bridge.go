@@ -22,6 +22,7 @@ type RuntimeCommands interface {
 	RegisterLocalFile(ctx context.Context, path string) (app.LocalFileSnapshot, error)
 	SendAcceleratedFile(ctx context.Context, peerDeviceID string, localFileID string) (app.TransferSnapshot, error)
 	ListMessageHistory(ctx context.Context, conversationID string, beforeCursor string) (app.MessageHistoryPageSnapshot, error)
+	RemoveMessage(ctx context.Context, messageID string) error
 }
 
 type ServiceResolver func() RuntimeCommands
@@ -135,6 +136,14 @@ func (b *Bridge) SendAcceleratedFile(ctx context.Context, peerDeviceID string, l
 		return app.TransferSnapshot{}, err
 	}
 	return service.SendAcceleratedFile(ctx, peerDeviceID, localFileID)
+}
+
+func (b *Bridge) RemoveMessage(ctx context.Context, messageID string) error {
+	service, err := b.service()
+	if err != nil {
+		return err
+	}
+	return service.RemoveMessage(ctx, messageID)
 }
 
 func (b *Bridge) ListMessageHistory(ctx context.Context, conversationID string, beforeCursor string) (app.MessageHistoryPageSnapshot, error) {

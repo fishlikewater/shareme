@@ -400,6 +400,19 @@ export default function AppShell({ api }: AppProps) {
     }
   }
 
+  async function handleDeleteMessage(messageId: string) {
+    setCommandError(undefined);
+    try {
+      await resolvedApi.removeMessage(messageId);
+      startTransition(() => {
+        setSnapshot((current) => (current ? removeMessageFromSnapshot(current, messageId) : current));
+        setHistoryStateByConversation((current) => removeMessageFromHistoryStateMap(current, messageId));
+      });
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : "delete message failed");
+    }
+  }
+
   if (errorMessage) {
     return (
       <main className="ms-app">
@@ -506,6 +519,7 @@ export default function AppShell({ api }: AppProps) {
               onPickLocalFile={handlePickLocalFile}
               onSendAcceleratedFile={handleSendAcceleratedFile}
               onLoadOlderMessages={handleLoadOlderMessages}
+              onDeleteMessage={handleDeleteMessage}
             />
             <PairCodeDialog
               peer={selectedPeer}
@@ -758,6 +772,35 @@ function mergeHistoryMessages(current: MessageSnapshot[], incoming: MessageSnaps
   return [...messagesByID.values()].sort(compareConversationMessage);
 }
 
+function removeMessageFromHistoryStateMap(
+  historyStateByConversation: Record<string, ConversationHistoryState | undefined>,
+  messageId: string,
+): Record<string, ConversationHistoryState | undefined> {
+  let changed = false;
+  const nextState: Record<string, ConversationHistoryState | undefined> = {};
+
+  for (const [conversationId, historyState] of Object.entries(historyStateByConversation)) {
+    if (!historyState) {
+      nextState[conversationId] = historyState;
+      continue;
+    }
+
+    const olderMessages = historyState.olderMessages.filter((message) => message.messageId !== messageId);
+    if (olderMessages.length === historyState.olderMessages.length) {
+      nextState[conversationId] = historyState;
+      continue;
+    }
+
+    changed = true;
+    nextState[conversationId] = {
+      ...historyState,
+      olderMessages,
+    };
+  }
+
+  return changed ? nextState : historyStateByConversation;
+}
+
 function upsertPeer(
   snapshot: BootstrapSnapshot,
   nextPeer: Partial<PeerSnapshot> & { deviceId: string },
@@ -809,6 +852,21 @@ function upsertMessage(snapshot: BootstrapSnapshot, message: MessageSnapshot): B
   return {
     ...snapshot,
     messages,
+  };
+}
+
+function removeMessageFromSnapshot(snapshot: BootstrapSnapshot, messageId: string): BootstrapSnapshot {
+  const messages = snapshot.messages.filter((message) => message.messageId !== messageId);
+  const transfers = snapshot.transfers.filter((transfer) => transfer.messageId !== messageId);
+
+  if (messages.length === snapshot.messages.length && transfers.length === snapshot.transfers.length) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    messages,
+    transfers,
   };
 }
 

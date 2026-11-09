@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -456,6 +457,24 @@ func (db *DB) ListMessagesPage(conversationID string, before domain.MessageBound
 	}
 
 	return messages, hasMore, nextBoundary, nil
+}
+
+func (db *DB) RemoveMessage(_ context.Context, messageID string) error {
+	tx, err := db.raw.Begin()
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`delete from transfers where message_id = ?`, messageID); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.Exec(`delete from messages where message_id = ?`, messageID); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (db *DB) SaveTransfer(transfer domain.Transfer) error {

@@ -64,6 +64,7 @@ const api: LocalApi = {
   pickLocalFile: vi.fn(),
   sendAcceleratedFile: vi.fn(),
   listMessageHistory: vi.fn(),
+  removeMessage: vi.fn().mockResolvedValue(undefined),
   subscribeEvents: vi.fn(() => ({
     close: vi.fn(),
     reconnect: vi.fn(),

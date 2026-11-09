@@ -59,6 +59,12 @@ export function createLocalhostApiClient(dependencies: LocalhostApiDependencies 
         method: "POST",
         body: JSON.stringify({ localFileId }),
       }),
+    removeMessage: (messageId) =>
+      fetchFn(joinURL(origin, `/api/messages/${messageId}`), { method: "DELETE" }).then((r) => {
+        if (!r.ok) {
+          throw new Error(`delete failed: ${r.status}`);
+        }
+      }),
     listMessageHistory: (conversationId, beforeCursor) =>
       requestJson<MessageHistoryPage>(
         fetchFn,

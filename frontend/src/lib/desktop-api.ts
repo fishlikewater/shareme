@@ -20,6 +20,7 @@ export type DesktopCommands = {
   SendFilePath?: (peerDeviceId: string, path: string) => Promise<TransferSnapshot>;
   PickLocalFile: () => Promise<LocalFileSnapshot>;
   SendAcceleratedFile: (peerDeviceId: string, localFileId: string) => Promise<TransferSnapshot>;
+  RemoveMessage: (messageId: string) => Promise<void>;
   ListMessageHistory: (conversationId: string, beforeCursor?: string) => Promise<MessageHistoryPage>;
   ReplayEvents?: (afterSeq: number) => Promise<AgentEvent[]>;
   UiReady?: () => Promise<void>;
@@ -62,6 +63,7 @@ export function createDesktopApiClient(dependencies: DesktopApiDependencies = {}
       : undefined,
     pickLocalFile: () => commands.PickLocalFile(),
     sendAcceleratedFile: (peerDeviceId, localFileId) => commands.SendAcceleratedFile(peerDeviceId, localFileId),
+    removeMessage: (messageId) => commands.RemoveMessage(messageId),
     listMessageHistory: (conversationId, beforeCursor) => commands.ListMessageHistory(conversationId, beforeCursor),
     subscribeEvents({ lastEventSeq = 0, onEvent }) {
       let cursor = lastEventSeq;

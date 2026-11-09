@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -71,6 +72,8 @@ type MessageSnapshot struct {
 	Body           string `json:"body"`
 	Status         string `json:"status"`
 	CreatedAt      string `json:"createdAt"`
+	FilePath   string `json:"filePath,omitempty"`
+	FileExists bool   `json:"fileExists,omitempty"`
 }
 
 type TransferSnapshot struct {
@@ -108,6 +111,7 @@ type Store interface {
 	SaveMessageWithTransfer(message domain.Message, transfer domain.Transfer) error
 	ListMessages(conversationID string) ([]domain.Message, error)
 	ListMessagesPage(conversationID string, before domain.MessageBoundary, limit int) ([]domain.Message, bool, domain.MessageBoundary, error)
+	RemoveMessage(ctx context.Context, messageID string) error
 	SaveTransfer(transfer domain.Transfer) error
 	ListTransfers() ([]domain.Transfer, error)
 	UpdateTransferState(transferID string, state string) error
@@ -124,6 +128,7 @@ type Service interface {
 	PickLocalFile(ctx context.Context) (LocalFileSnapshot, error)
 	SendAcceleratedFile(ctx context.Context, peerDeviceID string, localFileID string) (TransferSnapshot, error)
 	ListMessageHistory(ctx context.Context, conversationID string, beforeCursor string) (MessageHistoryPageSnapshot, error)
+	RemoveMessage(ctx context.Context, messageID string) error
 }
 
 type EventPublisher interface {
@@ -322,6 +327,10 @@ func (s *RuntimeService) Bootstrap() (BootstrapSnapshot, error) {
 	}, nil
 }
 
+func (s *RuntimeService) RemoveMessage(ctx context.Context, messageID string) error {
+	return s.store.RemoveMessage(ctx, messageID)
+}
+
 func (s *RuntimeService) ListMessageHistory(_ context.Context, conversationID string, beforeCursor string) (MessageHistoryPageSnapshot, error) {
 	boundary, err := decodeMessageCursor(beforeCursor)
 	if err != nil {
@@ -335,7 +344,7 @@ func (s *RuntimeService) ListMessageHistory(_ context.Context, conversationID st
 
 	snapshots := make([]MessageSnapshot, 0, len(messages))
 	for _, message := range messages {
-		snapshots = append(snapshots, toMessageSnapshot(message))
+		snapshots = append(snapshots, toMessageSnapshot(message, s.cfg.DefaultDownloadDir))
 	}
 
 	return MessageHistoryPageSnapshot{
@@ -519,7 +528,7 @@ func (s *RuntimeService) SendTextMessage(ctx context.Context, peerDeviceID strin
 	}
 
 	s.publishMessageEvent(message)
-	return toMessageSnapshot(message), nil
+	return toMessageSnapshot(message, s.cfg.DefaultDownloadDir), nil
 }
 
 func (s *RuntimeService) SendFile(
@@ -1534,14 +1543,17 @@ func (s *RuntimeService) mapMessageSnapshots(conversations []domain.Conversation
 			NextCursor:     encodeMessageCursor(nextBoundary),
 		}
 		for _, message := range messages {
-			snapshots = append(snapshots, toMessageSnapshot(message))
+			snapshots = append(snapshots, toMessageSnapshot(message, s.cfg.DefaultDownloadDir))
 		}
 	}
 	return snapshots, historyWindows, nil
 }
 
-func toMessageSnapshot(message domain.Message) MessageSnapshot {
+func toMessageSnapshot(message domain.Message, downloadDir string) MessageSnapshot {
+	fp := resolveMessageFilePath(message, downloadDir)
 	return MessageSnapshot{
+		FilePath:   fp,
+		FileExists: fileExists(fp),
 		MessageID:      message.MessageID,
 		ConversationID: message.ConversationID,
 		Direction:      message.Direction,
@@ -1613,7 +1625,7 @@ func (s *RuntimeService) publishMessageEvent(message domain.Message) {
 	if s.events == nil {
 		return
 	}
-	s.events.Publish("message.upserted", toMessageSnapshot(message))
+	s.events.Publish("message.upserted", toMessageSnapshot(message, s.cfg.DefaultDownloadDir))
 }
 
 func (s *RuntimeService) publishTransferEvent(transfer domain.Transfer) {
@@ -1995,4 +2007,20 @@ func authorizeCallerFingerprint(expected string, actual string, role string) err
 		return fmt.Errorf("%w: %s fingerprint mismatch", protocol.ErrPeerForbidden, role)
 	}
 	return nil
+}
+
+
+func resolveMessageFilePath(message domain.Message, downloadDir string) string {
+	if message.Kind != "file" || message.Direction != "incoming" {
+		return ""
+	}
+	return filepath.Join(downloadDir, message.Body)
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
